@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environment (kept on E: — C: has only ~18 GB free)
+.venv/
+venv/
+
+# Environment / secrets
+.env
+*.local.env
+
+# Databases and logs
+*.db
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
+logs/
+*.log
+
+# Model weights — cached outside the repo (see docs/setup_windows.md, spec §45)
+models/
+*.onnx
+*.task
+*.pt
+
+# Frontend
+node_modules/
+dist/
+.vite/
+
+# Captured media must never be committed (spec §34)
+*.mp4
+*.avi
+captures/
+screenshots/
+
+# OS / editor
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
