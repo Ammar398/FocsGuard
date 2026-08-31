@@ -1,0 +1,22 @@
+# FocusGuard - desktop agent (Windows) dependencies
+#
+# NOTE ON THE INFERENCE RUNTIME
+# This machine has an AMD Radeon RX 580 (no CUDA, and no ROCm on Windows), so
+# PyTorch would fall back to CPU and cost ~2.5-3 GB of disk for no acceleration.
+# YOLO therefore runs as ONNX through onnxruntime-directml, which does use the GPU.
+# `ultralytics` is a DEVELOPER tool only (one-off ONNX export) and lives in dev.txt.
+#
+# Do NOT add `onnxruntime` alongside `onnxruntime-directml`; the two packages
+# install the same module and conflict.
+
+-r base.txt
+
+numpy==2.4.6
+opencv-contrib-python==5.0.0.93
+mediapipe==1.0.1
+onnxruntime-directml==1.24.4
+psutil==7.2.2
+requests==2.34.2
+
+# Windows foreground-window monitoring (Phase 9)
+pywin32==312

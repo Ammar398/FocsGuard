@@ -1,0 +1,13 @@
+# FocusGuard - backend API dependencies (Phase 12+)
+# Not installed yet. Listed here so the dependency plan is visible from Phase 1.
+
+-r base.txt
+
+fastapi
+uvicorn[standard]
+sqlalchemy>=2.0
+alembic
+argon2-cffi          # password hashing (no 72-byte truncation, unlike bcrypt)
+pyjwt
+python-multipart
+psycopg[binary]      # PostgreSQL driver, production only; SQLite needs no driver

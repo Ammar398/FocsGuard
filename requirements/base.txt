@@ -1,0 +1,7 @@
+# FocusGuard - shared runtime dependencies (agent + backend)
+# Installed by every role. Keep this list small.
+# Versions below are the ones actually resolved and tested on the dev machine.
+
+pydantic==2.13.5
+pydantic-settings==2.15.0
+python-dotenv==1.2.3

@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "focusguard"
+version = "0.1.0"
+description = "Privacy-conscious AI attention, focus and productivity monitoring platform"
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+license = { text = "MIT" }
+
+# Runtime dependencies are kept minimal here on purpose. The per-role dependency
+# sets live in requirements/ so that a machine running only the desktop agent does
+# not have to install the backend stack, and vice versa.
+dependencies = [
+    "pydantic>=2.7,<3",
+    "pydantic-settings>=2.2,<3",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+agent = [
+    "numpy>=2.0",
+    "opencv-contrib-python>=4.9",
+    "mediapipe>=1.0",
+    "onnxruntime-directml>=1.18",
+    "psutil>=5.9",
+    "requests>=2.31",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.4",
+    "mypy>=1.10",
+]
+
+[project.scripts]
+focusguard-hardware = "focusguard_agent.hardware.detector:main"
+focusguard-fetch-models = "focusguard_agent.hardware.model_store:main"
+
+# The project is a single workspace containing three importable packages.
+# Installing it once with `pip install -e .` makes all three resolvable from the
+# agent process, the backend process and the test suite alike, which removes the
+# sys.path manipulation that sibling folders would otherwise require on Windows.
+[tool.setuptools.packages.find]
+where = ["shared", "backend", "desktop_agent"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["shared", "backend", "desktop_agent"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.isort]
+# Without this, ruff treats the workspace packages as third-party and merges them
+# into the wrong import block.
+known-first-party = ["focusguard_shared", "focusguard_agent", "focusguard_backend"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_ignores = true
+ignore_missing_imports = true
