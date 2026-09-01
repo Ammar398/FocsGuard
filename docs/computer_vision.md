@@ -313,7 +313,67 @@ eyes are shut, so nothing is attributed to the user.
 
 ---
 
-## Phase 5 onwards
+## Phase 5 — Drowsiness
+
+### Measurement versus interpretation
+
+`EYES_CLOSED` is a measurement: the eyes were shut for over a second.
+`DROWSINESS` is an *interpretation* of that measurement, and interpretations need
+more evidence (spec section 61).
+
+A prolonged closure (>= 2.5 s) is the **trigger**. Three further signals set the
+**confidence**:
+
+| Signal | What it catches |
+|---|---|
+| Prolonged closure >= 2.5 s | the trigger — far longer than any blink |
+| **PERCLOS** | many partial closures instead of one long one |
+| Slow closures (0.4–2.5 s) | blinks that have become sluggish |
+| Head pitched down | the nodding that accompanies real sleepiness (Phase 6) |
+
+```
+confidence = eye_confidence * (0.80 + 0.06 * corroborating_signals)   capped at 0.98
+```
+
+An uncorroborated closure lands around 0.76; a fully corroborated one near 0.95.
+`eye_confidence` carries through from the EAR/blendshape agreement, so uncertainty
+in the measurement propagates into the interpretation rather than being lost.
+
+### PERCLOS
+
+PERCLOS — the percentage of time the eyes are closed over a rolling 60-second
+window — is the most extensively validated drowsiness measure in the
+driver-fatigue literature. It catches a failure mode invisible to a duration
+threshold: somebody fighting sleep produces many half-second closures, never one
+obvious three-second one, and a single-closure test scores them wide awake.
+
+It **corroborates only**. A user reading a long document blinks more and could
+drift over the threshold, and "you look sleepy" on that basis alone is exactly the
+weak claim section 61 forbids.
+
+Samples more than 1 s apart are excluded from the calculation, so camera downtime
+is never counted as eyes-closed time.
+
+### No double counting
+
+A `DROWSINESS` event always overlaps an `EYES_CLOSED` event — the same closure
+produced both. Summing their weights (40 + 10) would charge the user twice for one
+behaviour and exceed what either event is meant to cost.
+
+`EVENT_SUPERSEDES` in `focusguard_shared.constants` records that DROWSINESS
+supersedes EYES_CLOSED, and `resolve_superseded()` drops the covered event before
+scoring. Phase 8 must use it.
+
+### What is not claimed
+
+Observable behaviour only: the eyes were shut for N seconds, with these
+corroborating signals, at this confidence. No diagnosis of fatigue, sleep
+disorders or any medical condition (spec section 8). User-facing wording is
+"extended eye closure detected", never "you are asleep".
+
+---
+
+## Phase 6 onwards
 
 *To be written as each phase lands: EAR with blendshape cross-checking, drowsiness, head pose from the facial
 transformation matrix, iris-based gaze, and YOLOv8n phone detection through ONNX

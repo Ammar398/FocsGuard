@@ -29,6 +29,7 @@ import cv2
 from focusguard_agent.calibration.ear_calibration import load_profile
 from focusguard_agent.capture.camera import CameraSource, CameraState
 from focusguard_agent.config import get_settings
+from focusguard_agent.events.drowsiness import DrowsinessMonitor, DrowsinessObservation
 from focusguard_agent.events.eyes import EyeMonitor, EyeObservation
 from focusguard_agent.events.presence import FacePresenceMonitor, PresenceObservation
 from focusguard_agent.events.state_machine import BehaviorEvent
@@ -54,6 +55,7 @@ def _status_lines(
     camera: CameraSource,
     presence: FacePresenceMonitor,
     eyes: EyeMonitor,
+    drowsiness: DrowsinessMonitor,
     eye_state: EyeState | None,
     face_count: int,
     ear_threshold: float,
@@ -98,6 +100,17 @@ def _status_lines(
     else:
         eye_text, eye_colour = "eyes      open", _GREEN
 
+    # Drowsiness is an interpretation, so the corroborating evidence is shown
+    # alongside it rather than a bare verdict (spec sections 9, 41, 61).
+    indicators = drowsiness.indicators
+    if drowsiness.is_drowsy:
+        reasons = ", ".join(indicators.corroborating) or "long closure only"
+        drowsy_text, drowsy_colour = f"drowsy    DROWSINESS ({reasons})", _RED
+    elif indicators.perclos_elevated or indicators.slow_closures_elevated:
+        drowsy_text, drowsy_colour = "drowsy    signs present, no closure", _AMBER
+    else:
+        drowsy_text, drowsy_colour = "drowsy    no", _GREEN
+
     ear_value = eye_state.ear_average if eye_state and eye_state.valid else 0.0
     source = "calibrated" if calibrated else "default"
 
@@ -105,6 +118,9 @@ def _status_lines(
         (camera_text, camera_colour),
         (presence_text, presence_colour),
         (eye_text, eye_colour),
+        (drowsy_text, drowsy_colour),
+        (f"perclos   {indicators.perclos * 100:4.0f}%   "
+         f"slow closures {indicators.slow_closure_count}", _GREY),
         (f"ear       {ear_value:.3f}  threshold {ear_threshold:.3f} ({source})", _GREY),
         (
             f"blinks    {eyes.blink_count}   "
@@ -141,6 +157,7 @@ def run(device: str | None, show_mesh: bool) -> int:
     limiter = FrameRateLimiter(settings.vision.landmark_fps)
     presence = FacePresenceMonitor(settings.vision)
     eyes = EyeMonitor(settings.vision)
+    drowsiness = DrowsinessMonitor(settings.vision)
 
     print(f"\nOpening camera matching {camera_settings.device_name!r} ... press q to quit\n")
 
@@ -184,6 +201,16 @@ def run(device: str | None, show_mesh: bool) -> int:
                         eyes_closed=False,
                         ear_average=0.0,
                         confidence=0.0,
+                        valid=False,
+                    )
+                ):
+                    _report(event)
+                for event in drowsiness.update(
+                    DrowsinessObservation(
+                        timestamp=now,
+                        camera_ok=False,
+                        face_present=False,
+                        eyes_closed=False,
                         valid=False,
                     )
                 ):
@@ -235,6 +262,18 @@ def run(device: str | None, show_mesh: bool) -> int:
                 ):
                     _report(event)
 
+                for event in drowsiness.update(
+                    DrowsinessObservation(
+                        timestamp=now,
+                        camera_ok=True,
+                        face_present=primary is not None,
+                        eyes_closed=bool(eye_state and eye_state.eyes_closed),
+                        eye_confidence=eye_state.confidence if eye_state else 0.0,
+                        valid=bool(eye_state and eye_state.valid),
+                    )
+                ):
+                    _report(event)
+
                 detect_times.append(now)
                 if len(detect_times) > 20:
                     del detect_times[:-20]
@@ -255,7 +294,7 @@ def run(device: str | None, show_mesh: bool) -> int:
             draw_status_panel(
                 canvas,
                 _status_lines(
-                    camera, presence, eyes, eye_state, face_count,
+                    camera, presence, eyes, drowsiness, eye_state, face_count,
                     ear_threshold, profile is not None, inference_ms, detect_fps, now,
                 ),
                 width=340,
@@ -272,6 +311,8 @@ def run(device: str | None, show_mesh: bool) -> int:
         for event in presence.flush(closing):
             _report(event)
         for event in eyes.flush(closing):
+            _report(event)
+        for event in drowsiness.flush(closing):
             _report(event)
 
         print(f"\nBlinks this session: {eyes.blink_count}")

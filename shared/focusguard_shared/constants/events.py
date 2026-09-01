@@ -53,6 +53,31 @@ PENALISING_VISION_EVENTS: frozenset[VisionEventType] = frozenset(
 )
 
 
+#: Events that already account for another event's evidence.
+#:
+#: A DROWSINESS event is always produced by the same closure that produced an
+#: EYES_CLOSED event, so adding both penalties would charge the user twice for
+#: one behaviour - and the combined weight (40 + 10) would exceed what either
+#: event is meant to cost. The scoring engine must take the GREATER penalty among
+#: a superseding event and those it supersedes, never their sum.
+EVENT_SUPERSEDES: dict[VisionEventType, frozenset[VisionEventType]] = {
+    VisionEventType.DROWSINESS: frozenset({VisionEventType.EYES_CLOSED}),
+}
+
+
+def resolve_superseded(
+    active: frozenset[VisionEventType] | set[VisionEventType],
+) -> set[VisionEventType]:
+    """Drop events that a more specific active event already accounts for.
+
+    Used by the scoring engine so overlapping evidence is counted once.
+    """
+    remaining = set(active)
+    for event_type in active:
+        remaining -= EVENT_SUPERSEDES.get(event_type, frozenset())
+    return remaining
+
+
 class EventState(StrEnum):
     """State of the generic event state machine (see ARCHITECTURE_PLAN.md 4.5).
 

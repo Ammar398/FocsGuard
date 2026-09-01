@@ -18,14 +18,17 @@ from focusguard_shared.constants.enums import (
     UserRole,
 )
 from focusguard_shared.constants.events import (
+    EVENT_SUPERSEDES,
     PENALISING_VISION_EVENTS,
     EventState,
     GazeDirection,
     HeadPose,
     VisionEventType,
+    resolve_superseded,
 )
 
 __all__ = [
+    "EVENT_SUPERSEDES",
     "GPU_VENDOR_IDS",
     "MIN_TASKS_FOR_STRENGTH_CLAIM",
     "PENALISING_VISION_EVENTS",
@@ -44,4 +47,5 @@ __all__ = [
     "TaskCategory",
     "UserRole",
     "VisionEventType",
+    "resolve_superseded",
 ]

@@ -124,6 +124,18 @@ class VisionSettings(BaseModel):
     drowsy_slow_blink_count: int = 3
     drowsy_slow_blink_window_seconds: float = 60.0
 
+    #: PERCLOS - the percentage of time the eyes are closed over a rolling
+    #: window. It is the most widely validated drowsiness measure in the driver
+    #: fatigue literature, and it catches the pattern a single long closure
+    #: misses: someone fighting sleep with many half-closures rather than one
+    #: obvious one. Used to corroborate a closure, never to accuse on its own.
+    perclos_window_seconds: float = 60.0
+    perclos_threshold: float = 0.15
+
+    #: Samples further apart than this are not counted towards PERCLOS. Without
+    #: it, a gap while the camera was down would be scored as eyes-closed time.
+    perclos_max_sample_gap_seconds: float = 1.0
+
     # -- Head pose (spec section 14), degrees from centre
     yaw_threshold_degrees: float = 25.0
     pitch_up_threshold_degrees: float = 20.0
