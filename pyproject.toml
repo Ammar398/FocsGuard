@@ -53,9 +53,18 @@ pythonpath = ["shared", "backend", "desktop_agent"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# Alembic writes these; reformatting generated migrations would make every
+# regeneration a diff, and they are not read as prose.
+extend-exclude = ["backend/focusguard_backend/database/migrations/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# B008 flags function calls in argument defaults. FastAPI's Depends() and Query()
+# are documented to be used exactly that way - it is the framework's dependency
+# injection, not an accidental shared mutable default.
+"backend/focusguard_backend/api/**" = ["B008"]
 
 [tool.ruff.lint.isort]
 # Without this, ruff treats the workspace packages as third-party and merges them
