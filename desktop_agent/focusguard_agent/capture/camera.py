@@ -436,6 +436,22 @@ class CameraSource:
             consecutive_failures = 0
             now = time.monotonic()
 
+            # A frozen feed is a soft failure: frames keep arriving, so the read
+            # loop above never notices anything wrong and would sit on a dead
+            # picture indefinitely. Reopening the device is what actually revives
+            # a virtual camera whose phone dropped out.
+            if (
+                self._static_since is not None
+                and now - self._static_since > self._settings.no_signal_reconnect_seconds
+            ):
+                logger.warning(
+                    "Feed frozen for %.0fs; reopening the camera",
+                    now - self._static_since,
+                )
+                self._close()
+                self._stop_event.wait(self._settings.reconnect_interval_seconds)
+                continue
+
             try:
                 image = self._transform(image)
             except cv2.error:

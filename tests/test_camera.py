@@ -207,3 +207,35 @@ def test_stopped_stream_outranks_frozen_stream() -> None:
     camera._static_since = time.monotonic() - 30.0
 
     assert camera.state is CameraState.UNAVAILABLE
+
+
+def test_frozen_feed_recovers_when_the_picture_changes_again() -> None:
+    """Once real video returns, the camera must go straight back to OK.
+
+    A frozen feed that never cleared would silently stop monitoring for the rest
+    of the session - a worse failure than the one it was added to fix.
+    """
+    import time
+
+    camera = _camera(static_feed_seconds=3.0)
+    camera._state = CameraState.OK
+    camera._last_frame_at = time.monotonic()
+    camera._static_since = time.monotonic() - 5.0
+    assert camera.state is CameraState.NO_SIGNAL
+
+    # The capture loop clears _static_since as soon as two frames differ.
+    camera._static_since = None
+    assert camera.state is CameraState.OK
+    assert camera.is_available is True
+
+
+def test_reopening_clears_frozen_feed_tracking() -> None:
+    """The last frame before a reconnect must not be compared with the first after."""
+    camera = _camera()
+    camera._signature = np.zeros((36, 64), dtype=np.int16)
+    camera._static_since = 123.0
+
+    camera._close()
+
+    assert camera._signature is None
+    assert camera._static_since is None

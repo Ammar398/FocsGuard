@@ -81,6 +81,13 @@ class CameraSettings(BaseModel):
     #: missing a placeholder is a far better failure than wrongly discarding a
     #: genuine absence.
     static_feed_tolerance: float = 0.0
+
+    #: A frozen feed does not always heal itself. Measured here: after the phone
+    #: locked, Camo dropped to all-black frames and stopped delivering entirely -
+    #: unlocking the phone did not bring the video back. Reopening the DirectShow
+    #: device is what recovers it, so a feed frozen for this long is reconnected
+    #: automatically rather than left blank until the user restarts the agent.
+    no_signal_reconnect_seconds: float = 10.0
     reconnect_interval_seconds: float = 3.0
     open_timeout_seconds: float = 10.0
 
