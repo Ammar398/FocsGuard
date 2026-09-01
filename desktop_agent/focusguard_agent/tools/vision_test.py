@@ -118,6 +118,13 @@ def run(device: str | None, show_mesh: bool) -> int:
     detect_times: list[float] = []
     last_frame_index = -1
 
+    # The overlay must persist between detections. Detection runs at ~12.5 Hz
+    # while this display loop spins far faster, so clearing the landmarks every
+    # iteration would leave most frames undrawn and the overlay would visibly
+    # flicker on and off - which looks exactly like unstable face tracking, even
+    # though detection is perfectly steady.
+    faces_px: list = []
+
     with CameraSource(camera_settings) as camera, FaceLandmarkDetector() as detector:
         deadline = time.monotonic() + camera_settings.open_timeout_seconds
         while camera.read() is None and time.monotonic() < deadline:
@@ -140,6 +147,12 @@ def run(device: str | None, show_mesh: bool) -> int:
                     PresenceObservation(timestamp=now, camera_ok=False, face_count=0)
                 ):
                     _report(event)
+                # Drop the persisted overlay, or a stale face outline would sit on
+                # top of a frozen or black feed and imply tracking that is not
+                # happening.
+                faces_px = []
+                face_count = 0
+                landmark_count = 0
                 time.sleep(0.03)
                 if frame is None:
                     continue
@@ -147,7 +160,6 @@ def run(device: str | None, show_mesh: bool) -> int:
             is_new = frame.index != last_frame_index
             last_frame_index = frame.index
 
-            faces_px = []
             measured = camera.stats.measured_fps()
             frame_period = 1.0 / measured if measured > 0 else None
             if camera_ok and is_new and limiter.should_run(now, frame_period):
