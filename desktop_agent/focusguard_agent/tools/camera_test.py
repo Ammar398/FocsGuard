@@ -34,6 +34,7 @@ _STATE_COLOURS: dict[CameraState, tuple[int, int, int]] = {
     CameraState.OK: (80, 220, 100),
     CameraState.STARTING: (0, 200, 255),
     CameraState.UNAVAILABLE: (60, 60, 240),
+    CameraState.NO_SIGNAL: (60, 60, 240),
     CameraState.STOPPED: (160, 160, 160),
 }
 

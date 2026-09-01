@@ -68,6 +68,19 @@ class CameraSettings(BaseModel):
     #: Frames missing for longer than this raise CAMERA_UNAVAILABLE - which is
     #: explicitly NOT the same as FACE_ABSENT and is never penalised.
     unavailable_after_seconds: float = 2.0
+
+    #: A locked phone does not stop the stream. Camo substitutes a static
+    #: placeholder image and keeps sending it, so the camera looks healthy while
+    #: showing nobody. Frames that stay identical for this long are treated as
+    #: NO_SIGNAL and monitoring suspends, rather than being scored as absence.
+    static_feed_seconds: float = 3.0
+
+    #: Mean absolute pixel difference at or below which two frames count as
+    #: identical. Zero means bit-identical, which is the conservative choice: a
+    #: real sensor always carries noise, so a live feed cannot trip this, and
+    #: missing a placeholder is a far better failure than wrongly discarding a
+    #: genuine absence.
+    static_feed_tolerance: float = 0.0
     reconnect_interval_seconds: float = 3.0
     open_timeout_seconds: float = 10.0
 

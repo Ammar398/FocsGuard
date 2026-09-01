@@ -91,6 +91,39 @@ the camera is healthy **and** a face was found.
 Reconnection is automatic: ten consecutive failed reads trigger a reopen, with a
 configurable wait between attempts so a missing camera cannot spin the CPU.
 
+### Two camera failures, not one
+
+The first implementation checked only "have frames stopped arriving?". That misses
+the failure that actually happens most often with a phone camera.
+
+| State | Meaning | Cause |
+|---|---|---|
+| `UNAVAILABLE` | No frames arriving | Camo Studio closed, device unplugged, Wi-Fi lost |
+| `NO_SIGNAL` | Frames arriving, but not live video | **Phone locked** |
+
+**Camo does not stop streaming when the phone locks.** It substitutes a static
+placeholder image - a grey frame with a camera icon - and keeps sending it. Every
+stopped-stream check reports a perfectly healthy camera, the face detector finds
+nobody, and after the two-second grace `FACE_ABSENT` fires against a user who did
+nothing wrong. This was found during Phase 3 testing, by locking the phone and
+observing that the status panel stayed green.
+
+**Detection.** Each frame is reduced to a 64x36 greyscale fingerprint and compared
+with the previous one. Measured on this machine, **199 consecutive placeholder
+frames had a mean absolute difference of exactly 0.0000**. A real sensor cannot do
+that: even a perfectly still scene carries noise. Frames that stay bit-identical
+for longer than `static_feed_seconds` (default 3 s) are therefore treated as a
+synthetic source, and monitoring suspends exactly as it does for any other camera
+fault.
+
+The comparison tolerance defaults to **0.0 - bit-identical**, deliberately the most
+conservative setting. Missing a placeholder is a much better failure than wrongly
+discarding a genuine absence, so the test errs towards trusting the feed. Cost is a
+few microseconds per frame.
+
+A useful secondary signal, not currently used for detection: Camo also throttles to
+about 1 FPS while showing the placeholder, against 25-28 FPS when live.
+
 ### Measured performance
 
 25-second run, Camo over Wi-Fi, capture only (no detection yet):

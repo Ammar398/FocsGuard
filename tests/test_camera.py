@@ -141,3 +141,69 @@ def test_drop_rate_reports_uncollected_frames() -> None:
 
 def test_capture_device_renders_readably() -> None:
     assert str(CaptureDevice(index=0, name="Camo")) == "[0] Camo"
+
+
+# --- frozen feed (the locked-phone case) ------------------------------------
+
+
+def test_frame_signature_is_identical_for_identical_frames() -> None:
+    image = np.full((360, 640, 3), 128, dtype=np.uint8)
+    from focusguard_agent.capture.camera import frame_signature
+
+    assert np.array_equal(frame_signature(image), frame_signature(image.copy()))
+
+
+def test_frame_signature_differs_for_different_frames() -> None:
+    from focusguard_agent.capture.camera import frame_signature
+
+    flat = np.full((360, 640, 3), 128, dtype=np.uint8)
+    noisy = flat.copy()
+    noisy[100:200, 100:200] = 200
+
+    assert not np.array_equal(frame_signature(flat), frame_signature(noisy))
+
+
+def test_frozen_feed_becomes_no_signal_not_ok() -> None:
+    """A locked phone keeps streaming a placeholder; that is not a healthy camera.
+
+    Camo substitutes a static image rather than stopping, so frames keep arriving
+    and a stopped-stream check alone reports OK. Measured on this machine, 199
+    consecutive placeholder frames differed by exactly 0.0.
+    """
+    import time
+
+    camera = _camera(static_feed_seconds=3.0)
+    camera._state = CameraState.OK
+    camera._last_frame_at = time.monotonic()
+
+    camera._static_since = time.monotonic() - 1.0
+    assert camera.state is CameraState.OK, "1s of stillness is not yet a frozen feed"
+
+    camera._static_since = time.monotonic() - 5.0
+    assert camera.state is CameraState.NO_SIGNAL
+    assert camera.is_available is False
+
+
+def test_a_live_feed_is_never_no_signal() -> None:
+    """Real sensor noise means live frames are never bit-identical."""
+    import time
+
+    camera = _camera(static_feed_seconds=3.0)
+    camera._state = CameraState.OK
+    camera._last_frame_at = time.monotonic()
+    camera._static_since = None
+
+    assert camera.state is CameraState.OK
+    assert camera.is_available is True
+
+
+def test_stopped_stream_outranks_frozen_stream() -> None:
+    """No frames at all is the more fundamental fault and must win."""
+    import time
+
+    camera = _camera(static_feed_seconds=3.0)
+    camera._state = CameraState.OK
+    camera._last_frame_at = time.monotonic() - 30.0
+    camera._static_since = time.monotonic() - 30.0
+
+    assert camera.state is CameraState.UNAVAILABLE

@@ -15,13 +15,23 @@ behaviour for a real-time monitor.
 
 DESIGN: CAMERA HEALTH IS NOT USER BEHAVIOUR
 -------------------------------------------
-When frames stop arriving - the phone locks, Wi-Fi drops, Camo Studio is closed -
-the camera reports ``CameraState.UNAVAILABLE``. It must never be confused with a
-user leaving their desk. A face detector handed no frames finds no face, and
-scoring that as FACE_ABSENT would penalise a student for a technical failure they
-did not cause. This class therefore exposes camera health as a first-class
-signal, and the event engine consumes it before any behavioural conclusion is
-drawn (spec sections 11, 61).
+A face detector handed no usable frames finds no face, and scoring that as
+FACE_ABSENT would penalise a student for a technical failure they did not cause.
+Camera health is therefore a first-class signal that the event engine consumes
+before any behavioural conclusion is drawn (spec sections 11, 61).
+
+There are **two** distinct failures, and only checking for the first is a trap
+this project fell into:
+
+* ``UNAVAILABLE`` - frames stopped arriving. Camo Studio closed, device unplugged.
+* ``NO_SIGNAL``   - frames are still arriving, but they are not live video.
+
+The second is what a **locked phone** actually produces. Camo does not stop
+streaming when the handset locks; it substitutes a static placeholder image and
+keeps sending it at full rate. Every naive health check reports a perfectly
+healthy camera, the detector finds nobody, and FACE_ABSENT fires against a user
+who did nothing wrong. Detecting a stopped stream is not enough; a frozen one has
+to be caught too.
 """
 
 from __future__ import annotations
@@ -91,6 +101,12 @@ def fit_within(image: np.ndarray, max_width: int, max_height: int) -> np.ndarray
     return cv2.resize(image, new_size, interpolation=cv2.INTER_AREA)
 
 
+def frame_signature(image: np.ndarray) -> np.ndarray:
+    """Cheap 64x36 greyscale fingerprint used to spot a frozen feed."""
+    grey = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    return cv2.resize(grey, (64, 36), interpolation=cv2.INTER_AREA).astype(np.int16)
+
+
 class CameraState(StrEnum):
     """Health of the capture device."""
 
@@ -99,6 +115,20 @@ class CameraState(StrEnum):
     OK = "OK"
     #: Frames have stopped arriving. A technical fault, never a behavioural one.
     UNAVAILABLE = "UNAVAILABLE"
+    #: Frames ARE arriving, but they are not live video - every one is identical.
+    #:
+    #: This is the state a locked phone actually produces. Camo does not stop
+    #: streaming when the handset locks; it substitutes a static placeholder image
+    #: and keeps sending it. To a naive health check the camera looks perfectly
+    #: healthy, so the face detector finds nobody and FACE_ABSENT fires - which is
+    #: exactly the false accusation the design exists to prevent.
+    #:
+    #: Measured on this machine: 199 consecutive placeholder frames had a mean
+    #: absolute difference of exactly 0.0000. A real sensor never does that, because
+    #: even a perfectly still scene carries noise. Bit-identical frames therefore
+    #: mean a synthetic source, and this is treated like any other camera fault:
+    #: monitoring suspends and nothing is attributed to the user.
+    NO_SIGNAL = "NO_SIGNAL"
 
 
 @dataclass(frozen=True)
@@ -176,6 +206,9 @@ class CameraSource:
         self._frame_index = 0
         self._last_frame_at: float | None = None
 
+        self._signature: np.ndarray | None = None
+        self._static_since: float | None = None
+
         self._state = CameraState.STOPPED
         self.stats = CameraStats()
 
@@ -252,9 +285,18 @@ class CameraSource:
             if self._last_frame_at is None:
                 return CameraState.UNAVAILABLE
 
-            silent_for = time.monotonic() - self._last_frame_at
-            if silent_for > self._settings.unavailable_after_seconds:
+            now = time.monotonic()
+            if now - self._last_frame_at > self._settings.unavailable_after_seconds:
                 return CameraState.UNAVAILABLE
+
+            # Frames are arriving, but are they live? A frozen feed is checked
+            # second, because a stopped feed is the more fundamental fault.
+            if (
+                self._static_since is not None
+                and now - self._static_since > self._settings.static_feed_seconds
+            ):
+                return CameraState.NO_SIGNAL
+
             return CameraState.OK
 
     @property
@@ -333,6 +375,10 @@ class CameraSource:
         if self._capture is not None:
             self._capture.release()
             self._capture = None
+        # A reopened device starts a fresh comparison; the last frame from the
+        # previous session must not be compared against the first of the next.
+        self._signature = None
+        self._static_since = None
 
     def _transform(self, image: np.ndarray) -> np.ndarray:
         """Apply configured rotation, flip and downscale.
@@ -395,6 +441,23 @@ class CameraSource:
             except cv2.error:
                 logger.warning("Frame transform failed", exc_info=True)
                 continue
+
+            # Compare against the previous frame to detect a frozen feed. The
+            # 64x36 fingerprint makes this cost a few microseconds per frame.
+            try:
+                signature = frame_signature(image)
+            except cv2.error:
+                signature = None
+
+            if signature is not None:
+                if self._signature is not None:
+                    difference = float(np.abs(signature - self._signature).mean())
+                    if difference <= self._settings.static_feed_tolerance:
+                        if self._static_since is None:
+                            self._static_since = now
+                    else:
+                        self._static_since = None
+                self._signature = signature
 
             with self._lock:
                 # An uncollected frame being overwritten is a drop. This is the

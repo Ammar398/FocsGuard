@@ -54,7 +54,12 @@ def _status_lines(
 ) -> list[tuple[str, tuple[int, int, int]]]:
     state = camera.state
 
-    if state is not CameraState.OK:
+    if state is CameraState.NO_SIGNAL:
+        # The locked-phone case: frames are arriving but they are a frozen
+        # placeholder, so nothing here may be attributed to the user.
+        camera_colour = _RED
+        camera_text = "camera    NO_SIGNAL (frozen feed) - not scored"
+    elif state is not CameraState.OK:
         camera_colour = _RED
         camera_text = f"camera    {state} - not scored"
     else:
