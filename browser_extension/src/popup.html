@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>FocusGuard</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      width: 320px; margin: 0; padding: 16px;
+      font: 13px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: #ffffff; color: #16181d;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { background: #16181d; color: #e8eaed; }
+      .panel { background: #1f2229 !important; border-color: #2c3038 !important; }
+      .note { color: #9aa0a8 !important; }
+      input { background: #16181d !important; color: #e8eaed !important;
+              border-color: #2c3038 !important; }
+    }
+    h1 { font-size: 15px; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+    .on { background: #17a34a; } .off { background: #6b7280; } .warn { background: #d97706; }
+    .panel {
+      background: #f6f7f9; border: 1px solid #e4e6ea;
+      border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;
+    }
+    .row { display: flex; justify-content: space-between; gap: 12px; margin: 3px 0; }
+    .row span:last-child { font-variant-numeric: tabular-nums; }
+    .note { color: #5f636a; font-size: 12px; margin: 10px 0 0; }
+    label { display: block; font-weight: 600; margin: 12px 0 4px; }
+    input {
+      width: 100%; box-sizing: border-box; padding: 7px 9px;
+      border: 1px solid #d3d6db; border-radius: 6px;
+      font-family: ui-monospace, "Cascadia Code", monospace; font-size: 11px;
+    }
+    button {
+      margin-top: 8px; padding: 7px 12px; border: 0; border-radius: 6px;
+      background: #2563eb; color: #fff; font-weight: 600; cursor: pointer;
+    }
+    button.secondary { background: #6b7280; }
+    ul { margin: 6px 0 0; padding-left: 18px; }
+    li { margin: 2px 0; }
+  </style>
+</head>
+<body>
+  <h1><span id="dot" class="dot off"></span><span id="heading">FocusGuard</span></h1>
+
+  <div class="panel">
+    <div class="row"><span>Agent</span><span id="agent">checking…</span></div>
+    <div class="row"><span>Monitoring</span><span id="state">—</span></div>
+    <div class="row"><span>Last report</span><span id="last">never</span></div>
+  </div>
+
+  <!-- Spec sections 34 and 62: the user must always be able to see exactly what
+       is collected, in plain language, without reading documentation. -->
+  <div class="panel">
+    <strong>What is sent</strong>
+    <ul>
+      <li>The domain of your active tab</li>
+      <li>One path segment, e.g. <code>/watch</code></li>
+    </ul>
+    <strong style="display:block;margin-top:8px">What is never sent</strong>
+    <ul>
+      <li>Full URLs, search terms, query strings</li>
+      <li>Page contents, form data, cookies</li>
+      <li>Background or inactive tabs</li>
+    </ul>
+    <p class="note">Sent only to FocusGuard on this computer (127.0.0.1). It never
+      leaves your machine from here.</p>
+  </div>
+
+  <button id="toggle" class="secondary">Pause monitoring</button>
+
+  <label for="token">Pairing token</label>
+  <input id="token" type="password" placeholder="paste from FocusGuard" autocomplete="off" />
+  <button id="save">Save token</button>
+  <p class="note" id="tokenHint">
+    Find it by running <code>focusguard-token</code>, or open
+    <code>%LOCALAPPDATA%\FocusGuard\ipc_token.txt</code>.
+  </p>
+
+  <script src="popup.js"></script>
+</body>
+</html>
