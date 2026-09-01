@@ -84,14 +84,27 @@ def _print_header() -> None:
     print("=" * 72)
 
 
-def run_capture_benchmark(seconds: float) -> int:
+def run_capture_benchmark(seconds: float, with_vision: bool = False) -> int:
     settings = get_settings()
 
     _print_header()
-    print(f"\nMeasuring capture for {seconds:.0f}s ...\n")
+    what = "capture + face landmarks" if with_vision else "capture"
+    print(f"\nMeasuring {what} for {seconds:.0f}s ...")
+    if with_vision:
+        print("Sit in front of the camera - with no face in frame, FaceLandmarker")
+        print("skips the landmark model entirely and the timing means nothing.\n")
+    else:
+        print()
 
     process = psutil.Process()
     stages = {"capture_read": StageTimer("capture_read")}
+
+    detector = None
+    if with_vision:
+        from focusguard_agent.vision.landmarks import FaceLandmarkDetector
+
+        detector = FaceLandmarkDetector()
+        stages["face_landmarks"] = StageTimer("face_landmarks")
 
     with CameraSource(settings.camera) as camera:
         deadline = time.monotonic() + settings.camera.open_timeout_seconds
@@ -116,9 +129,18 @@ def run_capture_benchmark(seconds: float) -> int:
         process.cpu_percent(interval=None)
         psutil.cpu_percent(interval=None)
 
+        if detector is not None:
+            # The first inference builds the graph and is far slower than the
+            # steady state; including it would skew the mean badly.
+            detector.detect(camera.read().image)  # type: ignore[union-attr]
+
         start = time.monotonic()
         end = start + seconds
         consumed = 0
+        frames_with_face = 0
+        detections = 0
+        detect_interval = 1.0 / max(1e-6, settings.vision.landmark_fps)
+        last_detect = 0.0
         cpu_samples: list[float] = []
         next_cpu_sample = start + 1.0
 
@@ -129,6 +151,16 @@ def run_capture_benchmark(seconds: float) -> int:
 
             if frame is not None:
                 consumed += 1
+
+                now = time.monotonic()
+                if detector is not None and (now - last_detect) >= detect_interval:
+                    last_detect = now
+                    detect_started = time.perf_counter()
+                    result = detector.detect(frame.image, timestamp=now)
+                    stages["face_landmarks"].record(time.perf_counter() - detect_started)
+                    detections += 1
+                    if result.face_count > 0:
+                        frames_with_face += 1
             else:
                 # Nothing new yet. Sleeping briefly keeps this loop from becoming
                 # a busy-wait that would distort the very CPU figure we measure.
@@ -142,6 +174,9 @@ def run_capture_benchmark(seconds: float) -> int:
         elapsed = time.monotonic() - start
         stats = camera.stats
         memory_mb = process.memory_info().rss / (1024**2)
+
+    if detector is not None:
+        detector.close()
 
     mean_cpu = sum(cpu_samples) / len(cpu_samples) if cpu_samples else 0.0
     peak_cpu = max(cpu_samples) if cpu_samples else 0.0
@@ -157,6 +192,17 @@ def run_capture_benchmark(seconds: float) -> int:
     print(f"  Frames consumed     : {consumed} ({consumed / elapsed:.1f} FPS)")
     print(f"  Frames dropped      : {stats.frames_dropped} ({stats.drop_rate * 100:.0f}%)")
     print(f"  Reconnects          : {max(0, stats.reconnect_attempts - 1)}")
+
+    if detector is not None:
+        print("\nFACE LANDMARKS")
+        print(f"  Detections run      : {detections} ({detections / elapsed:.1f} Hz, "
+              f"target {settings.vision.landmark_fps:.0f} Hz)")
+        share = (frames_with_face / detections * 100) if detections else 0.0
+        print(f"  Frames with a face  : {frames_with_face}/{detections} ({share:.0f}%)")
+        if share < 50:
+            print("  WARNING: a face was absent from most frames, so the timings below")
+            print("           understate the real cost - the landmark model is skipped")
+            print("           entirely when no face is detected.")
 
     print("\nSTAGE TIMINGS (milliseconds)")
     print(f"  {'stage':<20} {'calls':>8} {'mean':>8} {'p95':>8} {'max':>8}")
@@ -187,10 +233,15 @@ def run_capture_benchmark(seconds: float) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description="FocusGuard performance benchmark")
     parser.add_argument("--seconds", type=float, default=20.0, help="measurement window")
+    parser.add_argument(
+        "--vision",
+        action="store_true",
+        help="also measure face landmark detection (sit in front of the camera)",
+    )
     args = parser.parse_args()
 
     configure_logging(level="WARNING")
-    return run_capture_benchmark(args.seconds)
+    return run_capture_benchmark(args.seconds, with_vision=args.vision)
 
 
 if __name__ == "__main__":

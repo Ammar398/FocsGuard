@@ -51,17 +51,29 @@ def list_devices() -> int:
     return 0
 
 
-def _draw_overlay(image, camera: CameraSource, display_fps: float) -> None:
+def _draw_overlay(image, camera: CameraSource, new_frame_fps: float) -> None:
     """Draw status text. MediaPipe 1.x removed drawing_utils, so this is ours."""
     state = camera.state
     colour = _STATE_COLOURS.get(state, (200, 200, 200))
     stats = camera.stats
 
+    # Report BOTH resolutions. The camera's native mode and the size the pipeline
+    # actually works on differ whenever the driver ignores our request - Camo
+    # always sends 1280x720 and we downscale to 640x360 - and showing only the
+    # camera figure would misrepresent what the detectors receive.
+    camera_size = f"{stats.actual_width}x{stats.actual_height}"
+    processed_size = f"{image.shape[1]}x{image.shape[0]}"
+    size_line = (
+        f"size     {processed_size}"
+        if processed_size == camera_size
+        else f"size     {processed_size}  (camera {camera_size})"
+    )
+
     lines = [
         f"{camera.device.name if camera.device else 'no device'}",
         f"state    {state}",
-        f"capture  {stats.measured_fps():5.1f} FPS   display {display_fps:5.1f} FPS",
-        f"size     {stats.actual_width}x{stats.actual_height}",
+        f"capture  {stats.measured_fps():5.1f} FPS   new frames {new_frame_fps:5.1f} FPS",
+        size_line,
         f"frames   {stats.frames_captured}  dropped {stats.frames_dropped}"
         f" ({stats.drop_rate * 100:.0f}%)",
     ]
@@ -99,6 +111,7 @@ def run_preview(device: str | None, rotate: int | None, flip: bool | None) -> in
 
     window = "FocusGuard - camera test"
     frame_times: list[float] = []
+    last_frame_index = -1
     last_state: CameraState | None = None
 
     with CameraSource(settings) as camera:
@@ -125,15 +138,21 @@ def run_preview(device: str | None, rotate: int | None, flip: bool | None) -> in
                 time.sleep(0.02)
                 continue
 
-            now = time.monotonic()
-            frame_times.append(now)
-            if len(frame_times) > 30:
-                del frame_times[:-30]
-            span = frame_times[-1] - frame_times[0]
-            display_fps = (len(frame_times) - 1) / span if span > 0 else 0.0
+            # Count only genuinely new frames. Timing every loop iteration would
+            # measure how fast this loop spins - the previous version reported
+            # over 300 "FPS" from a 25 FPS camera, because read() returns the
+            # current frame again rather than blocking.
+            if frame.index != last_frame_index:
+                last_frame_index = frame.index
+                frame_times.append(time.monotonic())
+                if len(frame_times) > 30:
+                    del frame_times[:-30]
+
+            span = frame_times[-1] - frame_times[0] if len(frame_times) > 1 else 0.0
+            new_frame_fps = (len(frame_times) - 1) / span if span > 0 else 0.0
 
             canvas = frame.image.copy()
-            _draw_overlay(canvas, camera, display_fps)
+            _draw_overlay(canvas, camera, new_frame_fps)
             cv2.imshow(window, canvas)
 
             key = cv2.waitKey(1) & 0xFF
