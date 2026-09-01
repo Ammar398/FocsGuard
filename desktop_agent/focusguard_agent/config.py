@@ -45,8 +45,14 @@ class CameraSettings(BaseModel):
     #: Windows. "dshow", "msmf" or "any".
     backend: str = "dshow"
 
-    #: Phone cameras default to 1080p or higher. Forcing a small frame keeps the
-    #: i5-6500 from spending its budget downscaling images we never wanted.
+    #: Processing size, treated as a BOUNDING BOX rather than an exact shape:
+    #: frames are scaled to fit inside it with their aspect ratio preserved.
+    #: Distorting the image would corrupt EAR and head-pose geometry, which are
+    #: measured directly from pixel distances.
+    #:
+    #: Many virtual cameras ignore resolution requests outright - Camo delivers
+    #: 1280x720 whatever is asked for - so the downscale usually happens in
+    #: software. 1280x720 fits this box as 640x360.
     frame_width: int = 640
     frame_height: int = 480
     target_fps: int = 25
