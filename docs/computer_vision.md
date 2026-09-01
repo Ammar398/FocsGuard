@@ -160,9 +160,79 @@ headroom for FaceLandmarker (~12 Hz) and YOLO (~3 Hz, on the GPU via DirectML).
 
 ---
 
-## Phase 3 onwards
+## Phase 3 — Face landmarks and presence
 
-*To be written as each phase lands: FaceLandmarker and the MediaPipe Tasks API,
-EAR with blendshape cross-checking, drowsiness, head pose from the facial
+### Algorithm
+
+MediaPipe Tasks `FaceLandmarker` in VIDEO mode, `face_landmarker.task` (float16,
+3.8 MB), 478 landmarks including iris, with blendshapes and the 4x4 facial
+transformation matrix enabled.
+
+The legacy `mp.solutions.face_mesh` API used by almost every tutorial **does not
+exist in MediaPipe 1.x** and raises `AttributeError`. See CURRENT_STATE.md §2.6.
+
+### Measured performance
+
+25-second run, Camo live, user in frame for the whole run:
+
+| Metric | Value |
+|---|---|
+| Frames with a face | **219/219 (100%)** |
+| Landmark inference | **13.80 ms mean**, 15.36 ms p95, 22.30 ms max |
+| Capture rate | 26.1 FPS at 640×360 |
+| Process CPU | **38% of one core (9% of 4 cores)** |
+| Process memory | 174 MB |
+
+The Phase 0 estimate was 12–20 ms per landmark call. Measured 13.8 ms, so the
+frame budget in ARCHITECTURE_PLAN.md §4.2 holds on real hardware. At 12.5 Hz the
+landmark stage costs about 17% of one core, leaving ample room for YOLO.
+
+**Note:** with no face in frame FaceLandmarker skips the landmark model entirely
+and reports 2–5 ms. Any timing taken without a face is meaningless, so the
+benchmark prints the face-detection share and warns when it is low.
+
+### Detection rate is quantised by the frame grid
+
+The same run reported `Detections run: 219 (8.8 Hz, target 12 Hz)` — a 30%
+shortfall with no CPU saving.
+
+A stage can only run when a frame is available, so achievable rates are divisors
+of the capture rate. The camera delivers a frame every 40 ms; a 12 Hz target asks
+for one every 83.3 ms. A naive `now - last >= interval` test rejects the frame at
+80 ms for being 3 ms early and waits for 120 ms, giving **8.3 Hz**.
+
+`FrameRateLimiter` allows a stage to run up to **half a frame period early**, so
+it snaps to the nearest frame boundary instead of overshooting. The 12 Hz target
+then settles at **12.5 Hz** — the closest rate a 25 FPS grid can deliver.
+
+The half-frame allowance matters at low rates too. Phone detection at 3 Hz
+(333 ms) lands on the 320 ms frame for 3.1 Hz, whereas a cruder "run at 60% of the
+interval" rule would fire at 200 ms and give 5 Hz — two-thirds faster than asked,
+on the most expensive stage in the pipeline.
+
+This is worth knowing for Phase 4: a blink lasts 100–400 ms, so 8.3 Hz would
+cover a fast blink with one or two samples where 12.5 Hz gives three or four.
+
+### Event engine
+
+All behavioural events come from one `EventStateMachine`
+(`IDLE → CANDIDATE → ACTIVE`). Its rules apply to every detector in the system:
+
+- **Grace period** — the condition must hold before it is believed. Face absence
+  2 s, gaze away 4 s, phone 1.5 s (all configurable).
+- **Event start is when the condition began**, not when the grace elapsed. A 6 s
+  look-away with a 3 s grace is recorded as 6 s.
+- **Exit hysteresis** — one recovered frame cannot split a continuous event in two.
+- **Confidence is the mean** over the active window, never the peak.
+- **Minimum duration** — separates a blink from an `EYES_CLOSED` event.
+
+Verified in live testing: `FACE_ABSENT` events of 3.0 s and 6.7 s were recorded
+with correct durations, and brief absences produced nothing.
+
+---
+
+## Phase 4 onwards
+
+*To be written as each phase lands: EAR with blendshape cross-checking, drowsiness, head pose from the facial
 transformation matrix, iris-based gaze, and YOLOv8n phone detection through ONNX
 Runtime.*

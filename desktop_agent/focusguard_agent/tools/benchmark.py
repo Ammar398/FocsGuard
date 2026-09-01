@@ -29,6 +29,7 @@ import psutil
 from focusguard_agent.capture.camera import CameraSource
 from focusguard_agent.config import get_settings
 from focusguard_agent.hardware.detector import detect_hardware
+from focusguard_agent.vision.scheduling import FrameRateLimiter
 from focusguard_shared.utilities import configure_logging
 
 
@@ -139,8 +140,7 @@ def run_capture_benchmark(seconds: float, with_vision: bool = False) -> int:
         consumed = 0
         frames_with_face = 0
         detections = 0
-        detect_interval = 1.0 / max(1e-6, settings.vision.landmark_fps)
-        last_detect = 0.0
+        limiter = FrameRateLimiter(settings.vision.landmark_fps)
         cpu_samples: list[float] = []
         next_cpu_sample = start + 1.0
 
@@ -153,8 +153,9 @@ def run_capture_benchmark(seconds: float, with_vision: bool = False) -> int:
                 consumed += 1
 
                 now = time.monotonic()
-                if detector is not None and (now - last_detect) >= detect_interval:
-                    last_detect = now
+                measured = camera.stats.measured_fps()
+                frame_period = 1.0 / measured if measured > 0 else None
+                if detector is not None and limiter.should_run(now, frame_period):
                     detect_started = time.perf_counter()
                     result = detector.detect(frame.image, timestamp=now)
                     stages["face_landmarks"].record(time.perf_counter() - detect_started)

@@ -34,6 +34,7 @@ from focusguard_agent.vision.drawing import (
     draw_status_panel,
 )
 from focusguard_agent.vision.landmarks import FaceLandmarkDetector
+from focusguard_agent.vision.scheduling import FrameRateLimiter
 from focusguard_shared.utilities import configure_logging, get_logger
 
 logger = get_logger("tools.vision_test")
@@ -102,7 +103,7 @@ def run(device: str | None, show_mesh: bool) -> int:
     # Detection runs slower than capture on purpose (spec section 3). At 12 Hz the
     # landmark stage sees every second frame from a 25 FPS camera, which is ample
     # for behaviour that is measured in seconds.
-    detect_interval = 1.0 / max(1e-6, settings.vision.landmark_fps)
+    limiter = FrameRateLimiter(settings.vision.landmark_fps)
 
     print(f"Opening camera matching {camera_settings.device_name!r} ... press q to quit\n")
     print(f"  grace: face absent {settings.vision.face_absent_grace_seconds}s, "
@@ -111,7 +112,6 @@ def run(device: str | None, show_mesh: bool) -> int:
     monitor = FacePresenceMonitor(settings.vision)
     window = "FocusGuard - vision test"
 
-    last_detect = 0.0
     face_count = 0
     landmark_count = 0
     inference_ms = 0.0
@@ -148,8 +148,9 @@ def run(device: str | None, show_mesh: bool) -> int:
             last_frame_index = frame.index
 
             faces_px = []
-            if camera_ok and is_new and (now - last_detect) >= detect_interval:
-                last_detect = now
+            measured = camera.stats.measured_fps()
+            frame_period = 1.0 / measured if measured > 0 else None
+            if camera_ok and is_new and limiter.should_run(now, frame_period):
                 result = detector.detect(frame.image, timestamp=now)
 
                 face_count = result.face_count
