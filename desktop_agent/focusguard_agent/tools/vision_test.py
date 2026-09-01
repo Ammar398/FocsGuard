@@ -35,6 +35,7 @@ from focusguard_agent.events.eyes import EyeMonitor, EyeObservation
 from focusguard_agent.events.phone import PhoneMonitor, PhoneObservation
 from focusguard_agent.events.presence import FacePresenceMonitor, PresenceObservation
 from focusguard_agent.events.state_machine import BehaviorEvent
+from focusguard_agent.scoring.engine import FocusScoringEngine, FocusSnapshot
 from focusguard_agent.vision.drawing import (
     draw_bounding_box,
     draw_landmarks,
@@ -46,7 +47,7 @@ from focusguard_agent.vision.head_pose import HeadPoseResult, estimate_head_pose
 from focusguard_agent.vision.landmarks import FaceLandmarkDetector
 from focusguard_agent.vision.phone_detector import PhoneDetector
 from focusguard_agent.vision.scheduling import FrameRateLimiter
-from focusguard_shared.constants import GazeDirection, HeadPose
+from focusguard_shared.constants import GazeDirection, HeadPose, VisionEventType
 from focusguard_shared.utilities import configure_logging, get_logger
 
 logger = get_logger("tools.vision_test")
@@ -64,6 +65,7 @@ def _status_lines(
     drowsiness: DrowsinessMonitor,
     attention: AttentionMonitor,
     phone: PhoneMonitor,
+    snapshot: FocusSnapshot | None,
     eye_state: EyeState | None,
     pose: HeadPoseResult | None,
     gaze: GazeResult | None,
@@ -175,7 +177,20 @@ def _status_lines(
     ear_value = eye_state.ear_average if eye_state and eye_state.valid else 0.0
     source = "calibrated" if calibrated else "default"
 
+    if snapshot is None:
+        score_line = ("score     starting ...", _GREY)
+    elif snapshot.suspended:
+        score_line = ("score     PAUSED (camera down, not scored)", _GREY)
+    else:
+        penalty = f"-{snapshot.penalty:.0f}" if snapshot.penalty else "0"
+        score_line = (
+            f"score     {snapshot.combined_focus_score:5.1f}   "
+            f"instant {snapshot.instant_score:5.1f}   penalty {penalty}",
+            _GREEN if snapshot.combined_focus_score >= 80 else _AMBER,
+        )
+
     return [
+        score_line,
         (camera_text, camera_colour),
         (presence_text, presence_colour),
         (eye_text, eye_colour),
@@ -200,6 +215,44 @@ def _status_lines(
         (f"rate      detect {detect_fps:4.1f} Hz   capture "
          f"{camera.stats.measured_fps():4.1f} FPS", _GREY),
     ]
+
+
+def _draw_score(image, snapshot: FocusSnapshot | None) -> None:
+    """Draw the focus score large, top-right - the number a user actually reads."""
+    if snapshot is None:
+        return
+
+    score = snapshot.combined_focus_score
+    if snapshot.suspended:
+        colour, label = _GREY, "PAUSED"
+    elif score >= 80:
+        colour, label = _GREEN, "FOCUS"
+    elif score >= 55:
+        colour, label = _AMBER, "FOCUS"
+    else:
+        colour, label = _RED, "FOCUS"
+
+    height, width = image.shape[:2]
+    x = width - 150
+
+    overlay = image.copy()
+    cv2.rectangle(overlay, (x - 12, 8), (width - 8, 92), (0, 0, 0), -1)
+    cv2.addWeighted(overlay, 0.5, image, 0.5, 0, image)
+
+    cv2.putText(image, label, (x, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour, 1, cv2.LINE_AA)
+    cv2.putText(
+        image, f"{score:.0f}", (x, 72), cv2.FONT_HERSHEY_SIMPLEX, 1.4, colour, 3, cv2.LINE_AA
+    )
+    cv2.putText(
+        image,
+        f"avg {snapshot.session_average:.0f}",
+        (x + 72, 72),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.4,
+        _GREY,
+        1,
+        cv2.LINE_AA,
+    )
 
 
 def _report(event: BehaviorEvent) -> None:
@@ -229,6 +282,8 @@ def run(device: str | None, show_mesh: bool) -> int:
     drowsiness = DrowsinessMonitor(settings.vision)
     attention = AttentionMonitor(settings.vision, settings.scoring)
     phone = PhoneMonitor(settings.vision)
+    scoring = FocusScoringEngine(settings.scoring)
+    score_limiter = FrameRateLimiter(1.0 / settings.scoring.score_sample_interval_seconds)
 
     # Phone detection is optional: the ONNX model has to be exported first, and
     # the rest of the pipeline must still run without it.
@@ -255,6 +310,8 @@ def run(device: str | None, show_mesh: bool) -> int:
     eye_state: EyeState | None = None
     pose: HeadPoseResult | None = None
     phone_ms = 0.0
+    snapshot: FocusSnapshot | None = None
+    last_phone_confidence = 0.8
     phone_boxes: list = []
     gaze: GazeResult | None = None
 
@@ -435,6 +492,8 @@ def run(device: str | None, show_mesh: bool) -> int:
                 phone_boxes = [
                     (d.x1, d.y1, d.x2, d.y2, d.confidence) for d in phone_result.detections
                 ]
+                if phone_result.detected:
+                    last_phone_confidence = phone_result.best_confidence
 
                 for event in phone.update(
                     PhoneObservation(
@@ -445,6 +504,40 @@ def run(device: str | None, show_mesh: bool) -> int:
                     )
                 ):
                     _report(event)
+
+            # Scoring runs at its own slow cadence (1 Hz by default). A
+            # frame-rate score series would add millions of rows for no
+            # analytical gain (spec section 45), and the smoothing is defined per
+            # second so the rate does not change the result.
+            if score_limiter.should_run(now, frame_period):
+                active: dict[VisionEventType, float] = {}
+                if presence.face_absent:
+                    active[VisionEventType.FACE_ABSENT] = 1.0
+                if presence.multiple_faces:
+                    active[VisionEventType.MULTIPLE_FACES] = 1.0
+                if eyes.eyes_closed:
+                    active[VisionEventType.EYES_CLOSED] = (
+                        eye_state.confidence if eye_state else 0.9
+                    )
+                if drowsiness.is_drowsy:
+                    active[VisionEventType.DROWSINESS] = (
+                        eye_state.confidence if eye_state else 0.8
+                    )
+                if attention.gaze_away:
+                    active[VisionEventType.GAZE_AWAY] = gaze.confidence if gaze else 0.7
+                if attention.head_down:
+                    active[VisionEventType.HEAD_DOWN] = pose.confidence if pose else 0.8
+                if phone.phone_visible:
+                    active[VisionEventType.PHONE_VISIBLE] = last_phone_confidence
+
+                snapshot = scoring.update(
+                    now,
+                    active_events=active,
+                    # Productivity has no input until Phase 9 supplies foreground
+                    # application data; None keeps the combined score honest.
+                    productivity_score=None,
+                    suspended=not camera_ok or presence.suspended,
+                )
 
             span = detect_times[-1] - detect_times[0] if len(detect_times) > 1 else 0.0
             detect_fps = (len(detect_times) - 1) / span if span > 0 else 0.0
@@ -478,12 +571,13 @@ def run(device: str | None, show_mesh: bool) -> int:
                 canvas,
                 _status_lines(
                     camera, presence, eyes, drowsiness, attention, phone,
-                    eye_state, pose, gaze, face_count,
+                    snapshot, eye_state, pose, gaze, face_count,
                     ear_threshold, profile is not None, inference_ms,
                     phone_ms, phone_detector is not None, detect_fps, now,
                 ),
                 width=420,
             )
+            _draw_score(canvas, snapshot)
             cv2.imshow(window, canvas)
 
             key = cv2.waitKey(1) & 0xFF
@@ -504,6 +598,32 @@ def run(device: str | None, show_mesh: bool) -> int:
         for event in phone.flush(closing):
             _report(event)
 
+        summary = scoring.finish(closing)
+
+        def _mmss(seconds: float) -> str:
+            return f"{int(seconds) // 60}m {int(seconds) % 60}s"
+
+        print("\n" + "=" * 54)
+        print("SESSION SUMMARY")
+        print("=" * 54)
+        print(f"  Duration          : {_mmss(summary.duration_seconds)}")
+        print(f"  Focused           : {_mmss(summary.focused_seconds)} "
+              f"({summary.focused_ratio * 100:.0f}%)")
+        print(f"  Distracted        : {_mmss(summary.distracted_seconds)}")
+        if summary.suspended_seconds > 1:
+            print(f"  Not scored        : {_mmss(summary.suspended_seconds)} "
+                  "(camera unavailable)")
+        print(f"  Average focus     : {summary.average_focus_score:.1f}")
+        print(f"  Lowest focus      : {summary.lowest_focus_score:.1f}")
+        print(f"  Longest focus run : {_mmss(summary.longest_focus_block_seconds)}")
+
+        if summary.event_seconds:
+            print("\n  Time per event:")
+            for event_type, seconds in sorted(
+                summary.event_seconds.items(), key=lambda item: -item[1]
+            ):
+                count = summary.event_counts.get(event_type, 0)
+                print(f"    {event_type:<16} {_mmss(seconds):>10}  x{count}")
         print(f"\nBlinks this session: {eyes.blink_count}")
         print(f"Phone appearances  : {phone.event_count} "
               f"({phone.total_seconds:.0f}s total)")
