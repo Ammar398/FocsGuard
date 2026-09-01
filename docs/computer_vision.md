@@ -231,7 +231,89 @@ with correct durations, and brief absences produced nothing.
 
 ---
 
-## Phase 4 onwards
+## Phase 4 — Eye Aspect Ratio, blinks and eye closure
+
+### The algorithm
+
+EAR (Soukupova & Cech, 2016) reduces an eye to one number from six landmarks:
+
+```
+EAR = (‖p2-p6‖ + ‖p3-p5‖) / (2 * ‖p1-p4‖)
+
+        p2   p3
+   p1 .--.---.--. p4      numerator   = eye HEIGHT (two vertical spans)
+        p6   p5           denominator = eye WIDTH  (corner to corner)
+```
+
+Landmark indices: left `(33, 160, 158, 133, 153, 144)`, right `(362, 385, 387, 263, 373, 380)`.
+
+| | |
+|---|---|
+| **Input** | 6 landmarks per eye, in **pixel** coordinates |
+| **Output** | one float per eye, ~0.25–0.35 open, ~0.05–0.10 closed |
+| **Why chosen** | scale-invariant, 12 subtractions to compute, and fully explainable — no model, no training |
+| **Limitation** | degrades at steep head yaw, where the eye foreshortens |
+
+Dividing by eye width is the point: sitting closer grows height and width
+together, so the ratio holds regardless of distance from the camera.
+
+### Pixels, not normalised coordinates
+
+MediaPipe normalises x against image *width* and y against image *height*. On a
+640×360 frame those axes have different pixel scales, so computing EAR directly
+from normalised coordinates multiplies it by width/height — **1.78 on this
+camera**. Every published threshold and every saved calibration would be wrong.
+
+This is the same class of bug as the Phase 2 aspect-squash, so it is pinned by a
+test asserting the same eye scores identically at 640×360 and 640×480.
+
+### Two independent signals
+
+EAR is geometric and degrades with head angle. MediaPipe's `eyeBlinkLeft` /
+`eyeBlinkRight` blendshapes come from a largely pose-normalised model, so they
+fail differently.
+
+**EAR decides; the blendshapes say how confident that answer is.** Agreement gives
+confidence 0.95, disagreement 0.5, and the scoring engine multiplies penalties by
+confidence — so a contested reading costs the user roughly half as much
+(spec section 61).
+
+### Personal calibration
+
+The commonly quoted 0.21 threshold is an average, not a fit. A user whose relaxed
+EAR is 0.19 would read as permanently asleep; one at 0.34 would never blink.
+
+```
+threshold = mean_open_EAR - (k * std_open_EAR)     k = 2.5, clamped to [0.15, 0.30]
+```
+
+- Blinks **are expected** during calibration; the lowest 20% of readings are
+  dropped before the statistics are computed. Asking a user to hold their eyes
+  open produces strained, unrepresentative eyes.
+- The clamp bounds a bad calibration to "slightly wrong" instead of "completely
+  broken", and a clamped result is flagged so it can be re-run rather than hidden.
+- Stored at `%LOCALAPPDATA%\FocusGuard\calibration.json`; a corrupt file falls
+  back to the default rather than stopping the agent.
+
+### Blink versus closure
+
+| Duration | Classification | Cost |
+|---|---|---|
+| < 0.4 s | `BLINK` | none — counted only |
+| ≥ 1 s | `EYES_CLOSED` | penalised |
+| ≥ 2.5 s | `DROWSINESS` | heavily penalised (Phase 5) |
+
+A long closure is **not** also counted as a blink, or resting your eyes would look
+like rapid blinking. Blink rate over a rolling minute is accumulated here for
+Phase 5, since both suppressed and elevated blink rates are drowsiness indicators.
+
+Eye monitoring **suspends** whenever the camera fails, the face leaves frame, or
+the eye is too small to measure. In none of those cases do we know whether the
+eyes are shut, so nothing is attributed to the user.
+
+---
+
+## Phase 5 onwards
 
 *To be written as each phase lands: EAR with blendshape cross-checking, drowsiness, head pose from the facial
 transformation matrix, iris-based gaze, and YOLOv8n phone detection through ONNX
