@@ -9,6 +9,7 @@ __pycache__/
 # Virtual environment (kept on E: — C: has only ~18 GB free)
 .venv/
 venv/
+.venv-export/   # throwaway env for scripts/export_yolo.ps1
 
 # Environment / secrets
 .env

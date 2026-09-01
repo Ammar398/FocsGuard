@@ -469,7 +469,79 @@ Phase 8 additionally scales down the penalty weight. This phase decides whether 
 
 ---
 
-## Phase 7 onwards
+## Phase 7 — Phone detection
+
+### Why ONNX Runtime rather than the Ultralytics runtime
+
+`YOLO("yolov8n.pt").predict()` is one line, and the wrong choice on this machine:
+
+| | Ultralytics + PyTorch | ONNX Runtime + DirectML |
+|---|---|---|
+| Uses the RX 580 | **No** — PyTorch on Windows is CUDA or CPU | **Yes** |
+| Disk cost | ~2.5 GB | ~12 MB model |
+| Competes with MediaPipe for CPU | Yes | No — runs on the GPU |
+
+PyTorch is used **once**, by `scripts/export_yolo.ps1`, to produce the ONNX file.
+It never becomes a runtime dependency.
+
+The export runs in a **throwaway venv**, because `ultralytics` depends on
+`opencv-python`, which installs the same `cv2` module as the
+`opencv-contrib-python` the agent uses — installing it into the main environment
+risks replacing a working OpenCV.
+
+### The pipeline, written by hand
+
+```
+frame (640x360 BGR)
+  -> letterbox to 320x320, aspect preserved     _letterbox
+  -> BGR->RGB, HWC->CHW, /255, batch            _preprocess
+  -> ONNX Runtime (DirectML, CPU fallback)      session.run
+  -> output (1, 84, 2100)                       4 box rows + 80 class rows
+  -> filter class 67 above threshold            _postprocess
+  -> non-maximum suppression                    _nms
+  -> boxes mapped back to frame coordinates
+```
+
+Writing this by hand costs ~100 lines and buys the ability to explain every step
+from pixels to bounding box at defence, rather than pointing at a library call.
+
+**Letterbox, not resize.** Squashing 16:9 into a square would distort every
+object; a phone is strongly rectangular and would be stretched into a shape the
+model never saw in training. Same aspect-ratio discipline as Phase 2.
+
+**Padding is removed before the scale is undone.** Doing it the other way round
+shifts every box by `padding x scale` — a plausible-looking but wrong result, so
+it has its own test.
+
+**NMS is required.** YOLO proposes many overlapping boxes per object; without
+suppression one phone becomes a dozen detections.
+
+**Class 67 = `cell phone`** in COCO. No training or dataset needed.
+
+### One event per appearance
+
+Detection at 3 Hz over a 30-second appearance produces ~90 positive frames.
+Naively that is 90 events, and detection flickers — a hand crosses the phone, it
+tilts and catches a reflection — so even grouping consecutive positives would
+split one appearance into several.
+
+Both are handled by the shared state machine:
+
+| Mechanism | Value | Effect |
+|---|---|---|
+| Grace period | 1.5 s | a phone glimpsed while reaching past the desk is not an event |
+| Exit hysteresis | 2 s (`phone_merge_gap_seconds`) | a detection dropout shorter than this keeps one event open |
+
+Result: **one event per continuous appearance**, with an honest start, end and
+duration — which is what the timeline and the "phone distractions: 6" figure need.
+
+Unlike the eye and gaze monitors, phone detection requires only a working camera,
+**not** a visible face: a user holding a phone below the desk may be out of frame
+themselves while the phone is not.
+
+---
+
+## Phase 8 onwards
 
 *To be written as each phase lands: EAR with blendshape cross-checking, drowsiness, head pose from the facial
 transformation matrix, iris-based gaze, and YOLOv8n phone detection through ONNX

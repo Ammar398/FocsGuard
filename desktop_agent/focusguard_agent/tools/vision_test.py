@@ -32,6 +32,7 @@ from focusguard_agent.config import get_settings
 from focusguard_agent.events.attention import AttentionMonitor, AttentionObservation
 from focusguard_agent.events.drowsiness import DrowsinessMonitor, DrowsinessObservation
 from focusguard_agent.events.eyes import EyeMonitor, EyeObservation
+from focusguard_agent.events.phone import PhoneMonitor, PhoneObservation
 from focusguard_agent.events.presence import FacePresenceMonitor, PresenceObservation
 from focusguard_agent.events.state_machine import BehaviorEvent
 from focusguard_agent.vision.drawing import (
@@ -43,6 +44,7 @@ from focusguard_agent.vision.eye_analysis import EyeState, analyse_eyes
 from focusguard_agent.vision.gaze import GazeResult, estimate_gaze
 from focusguard_agent.vision.head_pose import HeadPoseResult, estimate_head_pose
 from focusguard_agent.vision.landmarks import FaceLandmarkDetector
+from focusguard_agent.vision.phone_detector import PhoneDetector
 from focusguard_agent.vision.scheduling import FrameRateLimiter
 from focusguard_shared.constants import GazeDirection, HeadPose
 from focusguard_shared.utilities import configure_logging, get_logger
@@ -61,6 +63,7 @@ def _status_lines(
     eyes: EyeMonitor,
     drowsiness: DrowsinessMonitor,
     attention: AttentionMonitor,
+    phone: PhoneMonitor,
     eye_state: EyeState | None,
     pose: HeadPoseResult | None,
     gaze: GazeResult | None,
@@ -68,6 +71,8 @@ def _status_lines(
     ear_threshold: float,
     calibrated: bool,
     inference_ms: float,
+    phone_ms: float,
+    phone_available: bool,
     detect_fps: float,
     now: float,
 ) -> list[tuple[str, tuple[int, int, int]]]:
@@ -154,6 +159,19 @@ def _status_lines(
         gaze_text = f"gaze      {gaze.direction} ({gaze.confidence:.2f})"
         gaze_colour = _AMBER
 
+    # Phone. One event per continuous appearance, never one per frame.
+    if not phone_available:
+        phone_text, phone_colour = "phone     detector unavailable", _GREY
+    elif phone.phone_visible:
+        phone_text = f"phone     PHONE_VISIBLE  {phone.current_duration(now):4.1f}s"
+        phone_colour = _RED
+    else:
+        phone_text = (
+            f"phone     none   {phone.event_count} appearances, "
+            f"{phone.total_seconds:.0f}s total"
+        )
+        phone_colour = _GREEN
+
     ear_value = eye_state.ear_average if eye_state and eye_state.valid else 0.0
     source = "calibrated" if calibrated else "default"
 
@@ -164,6 +182,7 @@ def _status_lines(
         (pose_text, pose_colour),
         (gaze_text, gaze_colour),
         (angles_text, _GREY),
+        (phone_text, phone_colour),
         (drowsy_text, drowsy_colour),
         (f"perclos   {indicators.perclos * 100:4.0f}%   "
          f"slow closures {indicators.slow_closure_count}", _GREY),
@@ -173,7 +192,11 @@ def _status_lines(
             f"{eyes.blink_rate_per_minute(now):.0f}/min",
             _GREY,
         ),
-        (f"faces     {face_count}   landmark {inference_ms:5.1f} ms", _GREY),
+        (
+            f"faces     {face_count}   landmark {inference_ms:5.1f} ms   "
+            f"phone {phone_ms:5.1f} ms",
+            _GREY,
+        ),
         (f"rate      detect {detect_fps:4.1f} Hz   capture "
          f"{camera.stats.measured_fps():4.1f} FPS", _GREY),
     ]
@@ -205,6 +228,22 @@ def run(device: str | None, show_mesh: bool) -> int:
     eyes = EyeMonitor(settings.vision)
     drowsiness = DrowsinessMonitor(settings.vision)
     attention = AttentionMonitor(settings.vision, settings.scoring)
+    phone = PhoneMonitor(settings.vision)
+
+    # Phone detection is optional: the ONNX model has to be exported first, and
+    # the rest of the pipeline must still run without it.
+    phone_detector = None
+    phone_limiter = FrameRateLimiter(settings.vision.phone_detection_fps)
+    try:
+        phone_detector = PhoneDetector(
+            model_path=settings.model_dir / "yolov8n.onnx",
+            input_size=settings.vision.yolo_input_size,
+            confidence_threshold=settings.vision.phone_confidence_threshold,
+        )
+        print(f"Phone detection enabled on {phone_detector.active_provider}")
+    except (FileNotFoundError, ImportError, RuntimeError) as error:
+        print(f"Phone detection disabled: {error}")
+        print("Run scripts/export_yolo.ps1 to enable it.")
 
     print(f"\nOpening camera matching {camera_settings.device_name!r} ... press q to quit\n")
 
@@ -215,6 +254,8 @@ def run(device: str | None, show_mesh: bool) -> int:
     last_frame_index = -1
     eye_state: EyeState | None = None
     pose: HeadPoseResult | None = None
+    phone_ms = 0.0
+    phone_boxes: list = []
     gaze: GazeResult | None = None
 
     # The overlay persists between detections: detection runs at ~12.5 Hz while
@@ -270,12 +311,17 @@ def run(device: str | None, show_mesh: bool) -> int:
                     )
                 ):
                     _report(event)
+                for event in phone.update(
+                    PhoneObservation(timestamp=now, camera_ok=False, detected=False)
+                ):
+                    _report(event)
 
                 faces_px = []
                 face_count = 0
                 eye_state = None
                 pose = None
                 gaze = None
+                phone_boxes = []
                 time.sleep(0.03)
                 if frame is None:
                     continue
@@ -375,6 +421,31 @@ def run(device: str | None, show_mesh: bool) -> int:
                 if len(detect_times) > 20:
                     del detect_times[:-20]
 
+            # Phone detection runs on its own, much slower schedule (~3 Hz):
+            # it is the most expensive stage, and a phone appearing is measured in
+            # seconds, not frames.
+            if (
+                phone_detector is not None
+                and camera_ok
+                and is_new
+                and phone_limiter.should_run(now, frame_period)
+            ):
+                phone_result = phone_detector.detect(frame.image, timestamp=now)
+                phone_ms = phone_result.inference_ms
+                phone_boxes = [
+                    (d.x1, d.y1, d.x2, d.y2, d.confidence) for d in phone_result.detections
+                ]
+
+                for event in phone.update(
+                    PhoneObservation(
+                        timestamp=now,
+                        camera_ok=True,
+                        detected=phone_result.detected,
+                        confidence=phone_result.best_confidence,
+                    )
+                ):
+                    _report(event)
+
             span = detect_times[-1] - detect_times[0] if len(detect_times) > 1 else 0.0
             detect_fps = (len(detect_times) - 1) / span if span > 0 else 0.0
 
@@ -388,12 +459,28 @@ def run(device: str | None, show_mesh: bool) -> int:
                     label="primary" if index == 0 else f"face {index + 1}",
                 )
 
+            for x1, y1, x2, y2, confidence in phone_boxes:
+                cv2.rectangle(
+                    canvas, (int(x1), int(y1)), (int(x2), int(y2)), _RED, 2, cv2.LINE_AA
+                )
+                cv2.putText(
+                    canvas,
+                    f"phone {confidence:.2f}",
+                    (int(x1), max(12, int(y1) - 6)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.45,
+                    _RED,
+                    1,
+                    cv2.LINE_AA,
+                )
+
             draw_status_panel(
                 canvas,
                 _status_lines(
-                    camera, presence, eyes, drowsiness, attention,
+                    camera, presence, eyes, drowsiness, attention, phone,
                     eye_state, pose, gaze, face_count,
-                    ear_threshold, profile is not None, inference_ms, detect_fps, now,
+                    ear_threshold, profile is not None, inference_ms,
+                    phone_ms, phone_detector is not None, detect_fps, now,
                 ),
                 width=420,
             )
@@ -414,8 +501,14 @@ def run(device: str | None, show_mesh: bool) -> int:
             _report(event)
         for event in attention.flush(closing):
             _report(event)
+        for event in phone.flush(closing):
+            _report(event)
 
         print(f"\nBlinks this session: {eyes.blink_count}")
+        print(f"Phone appearances  : {phone.event_count} "
+              f"({phone.total_seconds:.0f}s total)")
+        if phone_detector is not None:
+            phone_detector.close()
 
     cv2.destroyAllWindows()
     return 0
