@@ -61,6 +61,12 @@ from focusguard_agent.ipc.server import IpcServer
 from focusguard_agent.local_store.database import LocalStore, SessionClock
 from focusguard_agent.scoring.engine import FocusScoringEngine, FocusSnapshot
 from focusguard_agent.scoring.productivity import ProductivityTracker
+from focusguard_agent.tools.stop import (
+    clear_pid_file,
+    clear_stop_flag,
+    stop_requested,
+    write_pid_file,
+)
 from focusguard_agent.vision.eye_analysis import analyse_eyes
 from focusguard_agent.vision.gaze import estimate_gaze
 from focusguard_agent.vision.head_pose import estimate_head_pose
@@ -150,6 +156,9 @@ class FocusGuardAgent:
 
         self.latest_snapshot: FocusSnapshot | None = None
         self._events_recorded = 0
+        # Checked on a slow schedule: a file stat every tick would be wasteful
+        # when the user is not in a hurry to the nearest millisecond.
+        self._stop_check = FrameRateLimiter(2.0)
 
     # -- start-up ----------------------------------------------------------
 
@@ -248,6 +257,12 @@ class FocusGuardAgent:
 
     def run(self, duration_seconds: float | None = None) -> int:
         """Run until stopped, or for a fixed duration. Returns an exit code."""
+        # Registered BEFORE the subsystems load. Starting MediaPipe and YOLO takes
+        # about twelve seconds on this machine, and a user who runs `stop` during
+        # that window should not be told that no agent is running.
+        clear_stop_flag()
+        write_pid_file(self.session_name)
+
         self._start_camera()
         self._start_vision()
         self._start_activity()
@@ -266,12 +281,22 @@ class FocusGuardAgent:
         )
         logger.info("Session %d started", self._session_id)
 
-        print("\nMonitoring. Press Ctrl+C to stop.\n")
+        if stop_requested():
+            # Asked to stop while the models were still loading. Honour it rather
+            # than starting a session the user has already cancelled.
+            print("\nStop requested during start-up; shutting down.")
+            self._stop.set()
+
+        print("\nMonitoring. Press Ctrl+C to stop, or run:")
+        print("  python -m focusguard_agent.tools.stop\n")
         end = None if duration_seconds is None else started_monotonic + duration_seconds
 
         try:
             while not self._stop.is_set():
                 if end is not None and time.monotonic() >= end:
+                    break
+                if self._stop_check.should_run(time.monotonic(), 1.0) and stop_requested():
+                    print("\nStop requested. Shutting down cleanly ...")
                     break
                 self._tick()
                 time.sleep(0.01)
@@ -512,6 +537,9 @@ class FocusGuardAgent:
     def _shutdown(self) -> None:
         now = time.monotonic()
 
+        clear_stop_flag()
+        clear_pid_file()
+
         # Close everything still open, or a session ended mid-distraction would
         # silently discard it.
         for monitor in (self._presence, self._eyes, self._drowsiness, self._attention, self._phone):
@@ -591,6 +619,8 @@ class FocusGuardAgent:
         print(f"  Events saved      : {self._events_recorded}")
         print(f"  Session id        : {self._session_id}")
         print("=" * 62)
+        print("\nSee this again with:")
+        print(f"  python -m focusguard_agent.tools.report --session {self._session_id}")
 
 
 def main() -> int:
