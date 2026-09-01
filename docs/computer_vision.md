@@ -373,7 +373,103 @@ disorders or any medical condition (spec section 8). User-facing wording is
 
 ---
 
-## Phase 6 onwards
+## Phase 6 — Head pose and gaze
+
+### Head pose: two estimators, deliberately
+
+**Angles come from MediaPipe's 4x4 facial transformation matrix.** The usual
+alternative, `cv2.solvePnP` against a generic 3D face model, adds error nobody can
+quantify — the model is not the user's face. The matrix comes from the same model
+that placed the landmarks, so no geometry is assumed.
+
+**Direction comes from landmark geometry in image space.** A rotation matrix's
+sign convention depends on the axis convention of whoever produced it, and getting
+it backwards would label a left turn as a right one. Image-space geometry has no
+such ambiguity.
+
+So: **magnitude from the matrix, direction from the landmarks.** They are
+independent, which gives the same cross-check used elsewhere — agreement raises
+confidence, disagreement lowers it.
+
+The landmark proxy:
+
+```
+offset = (nose_x - face_centre_x) / face_width
+
+offset > 0  ->  nose right of centre  ->  user turned to their own LEFT
+offset < 0  ->  nose left of centre   ->  user turned to their own RIGHT
+```
+
+Scale is divided out of the matrix before decomposing — it carries head *size* as
+well as rotation, and leaving it in makes the angles drift with how close the user
+sits.
+
+**Convention:** angles are from the user's own perspective. `yaw` positive = turned
+left, `pitch` positive = looking up. With `flip_horizontal = false` a left turn
+appears on the *right* of the preview, because the camera is not mirrored.
+
+Yaw takes precedence over pitch when classifying: turning away from the screen is
+a stronger signal than a downward glance, which often still faces the monitor.
+
+### Gaze: the honest position
+
+The specification is explicit — *do not pretend webcam gaze tracking is accurate*.
+Proper gaze tracking uses infrared illumination and corneal reflections. This has a
+phone camera at 640×360 where **the iris is about 15 pixels across**, so one pixel
+of landmark error is several degrees of gaze.
+
+Output is a coarse direction plus a confidence, never a screen coordinate.
+`UNKNOWN` is a normal result, not a failure.
+
+```
+gaze = 0.7 * head_direction + 0.3 * iris_offset_within_eye
+```
+
+Head dominates because looking away is mostly a head movement. Confidence falls
+when the eyes close (the iris is hidden), the face is small, yaw is large, or the
+iris geometry disagrees with the `eyeLookIn/Out` blendshapes.
+
+### The asymmetry that protects the user
+
+When gaze confidence drops below the threshold, the direction is `UNKNOWN`, and the
+attention monitor treats that as **no evidence of looking away** — never as
+evidence of it.
+
+This is deliberate. A missed distraction costs a little accuracy. A fabricated one
+costs the user points they did not lose and tells them something false about their
+own behaviour. With a 15-pixel iris the uncertain case is common, so it must fail
+towards the user (spec section 61).
+
+### Multi-monitor (spec section 60)
+
+On a dual or multi-monitor profile:
+
+- the gaze-away grace period is extended by 1.75×;
+- gaze-away is **suppressed entirely** while the foreground application is
+  classified productive — reading documentation on a second screen with the IDE
+  focused is work, not distraction.
+
+Phase 8 additionally scales down the penalty weight. This phase decides whether the
+*event* happens at all.
+
+### Grace periods
+
+| Event | Grace | Why |
+|---|---|---|
+| `GAZE_AWAY` | 4 s (7 s multi-monitor) | normal work is full of brief glances |
+| `HEAD_DOWN` | 3 s | glancing at a keyboard is not distraction |
+
+### Limitations
+
+- Beyond ~45° of yaw one side of the face is barely visible and its landmarks are
+  extrapolated; both estimators degrade, reported as falling confidence.
+- Gaze cannot distinguish looking at a second monitor from looking out of a window.
+  Only the activity context (Phase 9/10) can tell those apart.
+- No screen-coordinate gaze point is produced, and none should be inferred.
+
+---
+
+## Phase 7 onwards
 
 *To be written as each phase lands: EAR with blendshape cross-checking, drowsiness, head pose from the facial
 transformation matrix, iris-based gaze, and YOLOv8n phone detection through ONNX
