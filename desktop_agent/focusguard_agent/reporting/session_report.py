@@ -19,10 +19,17 @@ TIME IS RECONSTRUCTED FROM SAMPLE GAPS
 Focused and distracted seconds come from the score timeline, which is written at
 roughly 1 Hz. Each sample is credited with the gap to the next one.
 
-Gaps longer than `_MAX_SAMPLE_GAP_SECONDS` are **not** counted. Those are pauses:
-the camera dropped, the machine slept, the agent was suspended. Counting them
-would attribute time to a user who was not being measured - the same rule the
-scoring engine, PERCLOS and the activity aggregator all follow.
+Gaps longer than the tolerance are **not** counted. Those are pauses: the camera
+dropped, the machine slept, the agent was suspended. Counting them would
+attribute time to a user who was not being measured - the same rule the scoring
+engine, PERCLOS and the activity aggregator all follow.
+
+The tolerance is **derived from the configured sample interval**, not fixed. A
+hardcoded five seconds silently assumes 1 Hz sampling: raise
+`scoring.score_sample_interval_seconds` above it and every gap looks like a
+pause, so every report shows zero focused and zero distracted time beside a
+perfectly ordinary-looking average. A wrong number that looks right is worse
+than a crash, so the two settings are tied together here instead.
 """
 
 from __future__ import annotations
@@ -37,8 +44,22 @@ from focusguard_shared.utilities import get_logger
 
 logger = get_logger("reporting.session")
 
-#: Samples further apart than this represent a pause, not elapsed session time.
-_MAX_SAMPLE_GAP_SECONDS = 5.0
+#: A gap of more than this many sample periods is a pause rather than jitter.
+#: Two and a half periods tolerates one dropped sample and a late one; three
+#: consecutive misses is a real interruption.
+_GAP_TOLERANCE_PERIODS = 2.5
+
+#: Floor for the tolerance, so a very fast sample rate does not make the report
+#: hypersensitive to ordinary scheduling jitter on a busy four-core machine.
+_MIN_SAMPLE_GAP_SECONDS = 5.0
+
+
+def default_sample_gap_seconds() -> float:
+    """The pause threshold implied by the configured sampling rate."""
+    from focusguard_agent.config import get_settings
+
+    interval = get_settings().scoring.score_sample_interval_seconds
+    return max(_MIN_SAMPLE_GAP_SECONDS, interval * _GAP_TOLERANCE_PERIODS)
 
 
 @dataclass
@@ -133,8 +154,17 @@ def _parse(value: str | None) -> datetime | None:
         return None
 
 
-def build_session_report(store: LocalStore, session_id: int) -> SessionReport | None:
-    """Compute a full report for one session, or None if it does not exist."""
+def build_session_report(
+    store: LocalStore,
+    session_id: int,
+    max_sample_gap_seconds: float | None = None,
+) -> SessionReport | None:
+    """Compute a full report for one session, or None if it does not exist.
+
+    `max_sample_gap_seconds` defaults to the value implied by the configured
+    sample interval. It is a parameter so tests can state it outright rather
+    than depending on global settings.
+    """
     row = store.get_session(session_id)
     if row is None:
         return None
@@ -160,13 +190,15 @@ def build_session_report(store: LocalStore, session_id: int) -> SessionReport | 
         finish = ended or last or started
         report.duration_seconds = max(0.0, (finish - started).total_seconds())
 
-    _summarise_scores(report, scores)
+    _summarise_scores(
+        report, scores, max_sample_gap_seconds or default_sample_gap_seconds()
+    )
     _summarise_events(report, store.vision_events(session_id))
     _summarise_activity(report, store.activity_events(session_id))
     return report
 
 
-def _summarise_scores(report: SessionReport, scores: list) -> None:
+def _summarise_scores(report: SessionReport, scores: list, max_gap_seconds: float) -> None:
     if not scores:
         return
 
@@ -195,7 +227,7 @@ def _summarise_scores(report: SessionReport, scores: list) -> None:
             continue
 
         gap = (next_moment - moment).total_seconds()
-        if not 0 < gap <= _MAX_SAMPLE_GAP_SECONDS:
+        if not 0 < gap <= max_gap_seconds:
             # A pause. Close any focus block rather than letting it span the gap.
             block_start = None
             continue

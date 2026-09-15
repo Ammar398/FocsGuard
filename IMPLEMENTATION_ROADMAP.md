@@ -136,10 +136,20 @@ Python and needs no Node, so it is cheap to do first.
 through the API; with the backend stopped, 5 events stayed queued and uploaded intact once it returned.
 See `docs/synchronization.md`.
 
-### Phase 14b — Student portal
-*(First phase requiring Node, if Option A is chosen.)* Login, session start/stop, live focus ring,
-timers, current app/domain, focus timeline with event overlays (§41).
-**Acceptance:** the §53 student demo flow runs end to end.
+### Phase 14b — Student portal ✅ COMPLETE
+React 19 + TypeScript + Vite 8 + Tailwind 4 + Recharts 3 (Option A). Login, live focus ring, timers,
+current app/domain, focus timeline with event overlays (§41).
+
+**Met**, with one deviation stated plainly: there is **no start/stop button**. A web page cannot start a
+process on the user's machine, and a button that quietly does nothing is worse than none. The dashboard
+shows the commands instead. That is also the right boundary for a monitoring tool — a dashboard that
+could switch someone's webcam on remotely is a different product.
+
+**Verified:** a 52-minute session with 6 attention events, 6 application spans and 1040 score samples
+rendered end to end through the dev proxy against a live backend. See `docs/student_portal.md`.
+
+**Node:** the existing install at `E:iles` was incomplete (no `node_modules`, so npm could not run) and
+that directory is not writable. A verified Node 22.23.2 now lives in `.tools/node`, gitignored.
 
 ### Phase 15 — Student reports and recommendations
 Daily/weekly reports, rule-based recommendation engine with evidence attached, CSV export.

@@ -1,0 +1,56 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens.
+ *
+ * The palette is defined once here rather than as literal colours scattered
+ * through components, because the focus colours carry meaning: the same green
+ * must mean "focused" on the ring, the timeline, and the app breakdown, or the
+ * dashboard teaches the student nothing.
+ *
+ * Both themes are defined. The viewer's system setting decides.
+ */
+@theme {
+  --color-ink: #0f172a;
+  --color-muted: #64748b;
+  --color-surface: #ffffff;
+  --color-canvas: #f8fafc;
+  --color-line: #e2e8f0;
+
+  /* Focus bands. Also used for classification: productive / neutral / distracting. */
+  --color-focus-high: #10b981;
+  --color-focus-mid: #f59e0b;
+  --color-focus-low: #ef4444;
+  --color-accent: #4f46e5;
+}
+
+:root {
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  @theme {
+    --color-ink: #e2e8f0;
+    --color-muted: #94a3b8;
+    --color-surface: #1e293b;
+    --color-canvas: #0f172a;
+    --color-line: #334155;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Recharts draws its own focus outlines; these keep keyboard focus visible
+   everywhere else without the default browser ring fighting the palette. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}

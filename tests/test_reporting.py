@@ -321,3 +321,56 @@ def test_the_pid_file_records_the_running_session(tmp_path, monkeypatch) -> None
 def test_a_missing_pid_file_is_not_an_error(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("FOCUSGUARD_DATA_DIR", str(tmp_path))
     assert read_pid_file() is None
+
+
+# --- the pause threshold is tied to the sample rate --------------------------
+
+
+def test_the_gap_tolerance_follows_the_configured_sample_rate(monkeypatch) -> None:
+    """A fixed five seconds silently assumes 1 Hz sampling.
+
+    Raise the interval past it and every gap reads as a pause, so a report shows
+    zero focused and zero distracted time beside a perfectly ordinary average.
+    A wrong number that looks right is worse than a crash.
+    """
+    from focusguard_agent.config import get_settings
+    from focusguard_agent.reporting.session_report import default_sample_gap_seconds
+
+    settings = get_settings()
+
+    monkeypatch.setattr(settings.scoring, "score_sample_interval_seconds", 1.0)
+    assert default_sample_gap_seconds() == 5.0, "the floor applies at 1 Hz"
+
+    monkeypatch.setattr(settings.scoring, "score_sample_interval_seconds", 10.0)
+    assert default_sample_gap_seconds() == 25.0, "scaled, so 10s sampling still counts"
+
+
+def test_slow_sampling_still_produces_focused_time(tmp_path) -> None:
+    """The regression the derived tolerance exists to prevent."""
+    from datetime import UTC, datetime, timedelta
+
+    from focusguard_agent.local_store.database import LocalStore
+    from focusguard_agent.reporting.session_report import build_session_report
+
+    store = LocalStore(tmp_path / "slow.db")
+    start = datetime(2026, 9, 1, 10, 0, tzinfo=UTC)
+    session_id = store.start_session(name="Slow sampling", agent_version="0.1.0",
+                                     started_at=start)
+
+    # Ten samples fifteen seconds apart - beyond the old fixed five-second rule.
+    for index in range(10):
+        store.record_score(
+            session_id=session_id,
+            recorded_at=start + timedelta(seconds=index * 15),
+            visual_attention_score=90.0,
+            combined_focus_score=90.0,
+        )
+    store.end_session(session_id, ended_at=start + timedelta(seconds=150))
+
+    with_fixed_five = build_session_report(store, session_id, max_sample_gap_seconds=5.0)
+    with_derived = build_session_report(store, session_id, max_sample_gap_seconds=37.5)
+    store.close()
+
+    assert with_fixed_five is not None and with_derived is not None
+    assert with_fixed_five.focused_seconds == 0.0, "the old behaviour, shown for contrast"
+    assert with_derived.focused_seconds == 135.0, "9 gaps of 15s, all counted"
