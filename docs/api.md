@@ -27,13 +27,26 @@ There was no reason to fall back to Flask.
 
 ## Endpoints
 
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/health` | liveness; reports the dialect, never credentials |
-| `POST` | `/api/v1/agent/events` | upload a batch of events |
-| `POST` | `/api/v1/agent/heartbeat` | report device liveness |
-| `GET` | `/api/v1/sessions` | list sessions |
-| `GET` | `/api/v1/sessions/{id}` | one session with its full timeline |
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| `GET` | `/health` | none | liveness; reports the dialect, never credentials |
+| `POST` | `/api/v1/auth/register` | none | create a student account |
+| `POST` | `/api/v1/auth/login` | none | exchange a password for a token pair |
+| `POST` | `/api/v1/auth/refresh` | refresh token | rotate, and get a new access token |
+| `POST` | `/api/v1/auth/logout` | refresh token | end one session |
+| `POST` | `/api/v1/auth/logout-all` | user | end every session |
+| `GET` | `/api/v1/auth/me` | user | who the caller is |
+| `POST` | `/api/v1/devices` | user | prepare a device, get a one-time enrolment token |
+| `POST` | `/api/v1/devices/enroll` | enrolment token | redeem it for a device credential |
+| `GET` | `/api/v1/devices` | user | list devices in scope |
+| `DELETE` | `/api/v1/devices/{id}` | user | revoke a device; its history is kept |
+| `POST` | `/api/v1/agent/events` | **device** | upload a batch of events |
+| `POST` | `/api/v1/agent/heartbeat` | **device** | report device liveness |
+| `GET` | `/api/v1/sessions` | user | list sessions |
+| `GET` | `/api/v1/sessions/{id}` | user | one session with its full timeline |
+
+**user** means a bearer access token; **device** means an `X-Device-Secret`
+header. They are not interchangeable — see *Authentication* below.
 
 Everything is under `/api/v1`. Agents are installed software that updates on
 their own schedule, so a deployed backend will always be serving some older
@@ -155,14 +168,103 @@ to nothing** cleanly.
 
 ---
 
+## Authentication (Phase 13)
+
+### Two token types, and why
+
+| | Access token | Refresh token |
+|---|---|---|
+| Form | JWT, HS256 | 48 random bytes |
+| Lifetime | 15 minutes | 30 days |
+| Stored? | no | yes, **hashed** |
+| Revocable? | no | yes |
+
+A stateless JWT cannot be revoked — that is the point of it. Fifteen minutes is
+therefore the longest a stolen access token stays useful. The long-lived half
+lives in a table, so signing out, a password change, or detected theft can end it
+immediately.
+
+### The scope comes from the token, never from the request
+
+This is what makes §51 hold. In Phase 12 `user_id` arrived as a query parameter.
+Now `current_scope()` reads a **signed claim**:
+
+```python
+def current_scope(user: User = Depends(get_current_user)) -> Scope:
+    if user.role == UserRole.MANAGER.value:
+        return Scope.for_organization(user.organization_id)
+    return Scope.for_user(user.id)
+```
+
+A caller may ask for whatever they like; the scope they get is the one their
+credential asserts. Tenant isolation is not a filter someone remembered to write.
+
+`tests/test_backend_isolation.py` proves this per route, and includes a test that
+fails when a new organisation-scoped route appears with no cross-tenant coverage.
+
+### Refresh rotation and reuse detection
+
+Each refresh consumes the old token and issues a new one in the same **family**.
+If an already-consumed token arrives again, either a client retried or a stolen
+token is being replayed — and we cannot tell which, so we assume the worse and
+revoke the whole family.
+
+That trade is deliberate: an occasional forced re-login is a far smaller harm
+than a silently persistent session hijack.
+
+### Devices are not people
+
+A device credential can **write its own events and read nothing**. A stolen agent
+secret should let an attacker post nonsense telemetry, not browse an
+organisation. The payload's `device_uuid` is checked against the authenticated
+device, so a device also cannot file events in another device's name.
+
+### Enrolment is three steps on purpose (§25)
+
+1. A manager (or a student, for their own machine) creates a device and gets a
+   **single-use enrolment token, valid one hour**.
+2. It is typed into the agent on the machine being enrolled.
+3. The agent exchanges it for a **long-lived device secret** stored locally.
+
+The shortcut — handing out the long-lived secret directly — is the wrong shape.
+The enrolment token travels through a chat message or an email, and those are not
+confidential channels. So the thing that travels expires quickly and works once,
+and the thing that lasts never leaves the machine it was issued to.
+
+Every token and secret is stored as a SHA-256 hash. A leaked database yields no
+usable credentials. Passwords use Argon2id instead, because they are human-chosen
+and there *is* a dictionary to attack.
+
+### Rate limiting
+
+Failed logins are counted per source address (10 in 5 minutes) and per account
+(20, looser so an attacker cannot lock a victim out of their own account). The
+check runs **before** hashing: Argon2id costs 64 MB per attempt, so unthrottled
+guessing is also a denial-of-service against a 16 GB machine.
+
+The counter is an in-process dict. That is correct for one uvicorn worker and
+wrong for a horizontally scaled deployment, where it must move to Redis. The
+interface is narrow so that swap is one class.
+
+### Configuration
+
+```
+JWT_SECRET_KEY=<a long random string>     # required in production
+JWT_ACCESS_TOKEN_MINUTES=15
+JWT_REFRESH_TOKEN_DAYS=30
+```
+
+With no key set, a random one is generated at start-up and a warning is logged;
+tokens then do not survive a restart. There is deliberately **no default secret**
+in source — a shipped default is exactly how real systems get compromised.
+
+---
+
 ## Not yet done
 
-**Authentication.** Phase 12 identifies a device by its UUID, and session routes
-take `user_id` as a query parameter. That is obviously not authentication — it is
-a placeholder so the routes could be written against a `Scope` from the start,
-rather than having isolation retrofitted later, which is when isolation bugs get
-introduced.
+**The agent side of enrolment.** The backend issues and checks device
+credentials, but the agent does not yet store one or upload with it — it writes
+to its local SQLite store. Phase 17 adds the agent's enrolment command, the
+consent screen (§25) and the upload client.
 
-**Phase 13** replaces `resolve_device()` and `current_scope()` with JWT and device
-credentials. Both are single functions, and every route already depends on them,
-so no route changes.
+**Password reset.** Needs email delivery, which nothing in the project has yet.

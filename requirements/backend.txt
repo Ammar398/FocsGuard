@@ -11,6 +11,10 @@ alembic==1.19.1
 # Argon2id rather than bcrypt: no 72-byte truncation, better defaults. (Phase 13)
 argon2-cffi==25.1.0
 pyjwt==2.13.0
+
+# Pydantic's EmailStr needs this; without it the auth schemas raise at import.
+# Worth the dependency: correct email validation is not a regex you write once.
+email-validator==2.3.0
 python-multipart==0.0.20
 
 # Test client for the API suite.

@@ -270,15 +270,217 @@ def test_the_api_refuses_to_serve_another_users_session(tmp_path, monkeypatch) -
             name="Private study", started_at=START,
         )
         db.commit()
-        session_id, attacker_id = session.id, attacker.id
+        session_id, attacker_id, victim_id = session.id, attacker.id, victim.id
+
+    from focusguard_backend.auth.tokens import create_access_token
+
+    # The attacker is properly signed in - as themselves. Phase 13 removed the
+    # query parameter that used to let a caller name whose data they wanted, so
+    # the only thing left to try is their own valid token.
+    attacker_token = create_access_token(
+        user_id=attacker_id, email="attacker@example.com", role="STUDENT"
+    )
 
     with TestClient(app) as client:
         response = client.get(
-            f"/api/v1/sessions/{session_id}", params={"user_id": attacker_id}
+            f"/api/v1/sessions/{session_id}",
+            headers={"Authorization": f"Bearer {attacker_token}"},
         )
         # 404 rather than 403: confirming a session exists but is not yours still
         # tells a stranger that it exists.
         assert response.status_code == 404
         assert "Private study" not in response.text
 
+        # And naming the victim in a parameter changes nothing: the scope comes
+        # from the signed claim, and a stray query string is simply ignored.
+        also_refused = client.get(
+            f"/api/v1/sessions/{session_id}",
+            params={"user_id": victim_id},
+            headers={"Authorization": f"Bearer {attacker_token}"},
+        )
+        assert also_refused.status_code == 404
+
     reset_engine()
+
+
+# --- every org-scoped route, with a genuine manager token -------------------
+#
+# The Phase 13 acceptance criterion: a Company A manager must receive 403 or 404
+# on **every** organisation-scoped route, and never data. One test per route, so
+# a route added later without a scope shows up as a gap here rather than as a
+# breach in production.
+
+
+@pytest.fixture
+def two_company_api(tmp_path, monkeypatch):
+    """A live API with two organisations, each with a manager and an employee."""
+    monkeypatch.setenv("FOCUSGUARD_BACKEND_DB", str(tmp_path / "cross_tenant.db"))
+    reset_engine()
+
+    from fastapi.testclient import TestClient
+
+    from focusguard_backend.auth.tokens import create_access_token, hash_token
+    from focusguard_backend.database.session import get_session_factory
+    from focusguard_backend.main import app
+    from focusguard_backend.models import Device
+
+    create_all(get_engine())
+
+    world: dict[str, object] = {}
+
+    with get_session_factory()() as db:
+        alpha = Organization(name="Company Alpha", slug="alpha")
+        beta = Organization(name="Company Beta", slug="beta")
+        db.add_all([alpha, beta])
+        db.flush()
+
+        alpha_boss = User(
+            email="boss@alpha.test", password_hash="x", role="MANAGER",
+            organization_id=alpha.id,
+        )
+        beta_boss = User(
+            email="boss@beta.test", password_hash="x", role="MANAGER",
+            organization_id=beta.id,
+        )
+        beta_worker = User(
+            email="worker@beta.test", password_hash="x", role="EMPLOYEE",
+            organization_id=beta.id,
+        )
+        db.add_all([alpha_boss, beta_boss, beta_worker])
+        db.flush()
+
+        beta_device = Device(
+            device_uuid="beta-device-uuid",
+            device_name="Beta workstation",
+            user_id=beta_worker.id,
+            organization_id=beta.id,
+            secret_hash=hash_token("beta-device-secret"),
+            is_active=True,
+        )
+        db.add(beta_device)
+        db.flush()
+
+        beta_session = TelemetryRepository(db).create_session(
+            session_uuid="beta-session",
+            user_id=beta_worker.id,
+            name="Beta confidential work",
+            started_at=START,
+            device_id=beta_device.id,
+            organization_id=beta.id,
+        )
+        db.commit()
+
+        world["beta_session_id"] = beta_session.id
+        world["beta_worker_id"] = beta_worker.id
+        world["beta_device_id"] = beta_device.id
+        world["alpha_token"] = create_access_token(
+            user_id=alpha_boss.id,
+            email=alpha_boss.email,
+            role="MANAGER",
+            organization_id=alpha.id,
+        )
+
+    with TestClient(app) as client:
+        world["client"] = client
+        yield world
+
+    reset_engine()
+
+
+def _alpha_headers(world) -> dict[str, str]:
+    return {"Authorization": f"Bearer {world['alpha_token']}"}
+
+
+def test_cross_tenant_session_listing_returns_nothing(two_company_api) -> None:
+    client = two_company_api["client"]
+
+    response = client.get("/api/v1/sessions", headers=_alpha_headers(two_company_api))
+
+    assert response.status_code == 200
+    assert response.json() == [], "Alpha has no sessions, and must not see Beta's"
+    assert "Beta confidential work" not in response.text
+
+
+def test_cross_tenant_session_detail_is_a_404(two_company_api) -> None:
+    client = two_company_api["client"]
+
+    response = client.get(
+        f"/api/v1/sessions/{two_company_api['beta_session_id']}",
+        headers=_alpha_headers(two_company_api),
+    )
+
+    assert response.status_code == 404
+    assert "Beta confidential work" not in response.text
+
+
+def test_cross_tenant_device_listing_returns_nothing(two_company_api) -> None:
+    client = two_company_api["client"]
+
+    response = client.get("/api/v1/devices", headers=_alpha_headers(two_company_api))
+
+    assert response.status_code == 200
+    assert response.json() == []
+    assert "beta-device-uuid" not in response.text
+
+
+def test_cross_tenant_enrolment_is_refused(two_company_api) -> None:
+    """Alpha's manager must not be able to attach a device to Beta's employee."""
+    client = two_company_api["client"]
+
+    response = client.post(
+        "/api/v1/devices",
+        json={"device_name": "Wedge", "user_id": two_company_api["beta_worker_id"]},
+        headers=_alpha_headers(two_company_api),
+    )
+
+    assert response.status_code == 404
+
+
+def test_cross_tenant_device_revocation_is_refused(two_company_api) -> None:
+    """Refusing to *read* is not enough; a write across the boundary is worse."""
+    client = two_company_api["client"]
+
+    response = client.delete(
+        f"/api/v1/devices/{two_company_api['beta_device_id']}",
+        headers=_alpha_headers(two_company_api),
+    )
+
+    assert response.status_code == 404
+
+    from focusguard_backend.database.session import get_session_factory
+    from focusguard_backend.models import Device
+
+    with get_session_factory()() as db:
+        device = db.get(Device, two_company_api["beta_device_id"])
+        assert device.revoked_at is None, "Beta's device is untouched"
+        assert device.is_active is True
+
+
+def test_every_org_scoped_route_is_covered_here(two_company_api) -> None:
+    """A route added without a scope should fail this, not leak quietly.
+
+    The list is written out by hand on purpose: an automated crawl would happily
+    grow to include a new unprotected route and keep passing.
+    """
+    client = two_company_api["client"]
+    spec = client.app.openapi()
+
+    reachable_with_a_user_token = {
+        path
+        for path in spec["paths"]
+        # /auth is about the caller themselves and /agent takes a device
+        # credential, neither of which is organisation-scoped.
+        if path.startswith("/api/v1/") and not path.startswith(("/api/v1/auth", "/api/v1/agent"))
+    }
+    covered = {
+        "/api/v1/sessions",
+        "/api/v1/sessions/{session_id}",
+        "/api/v1/devices",
+        "/api/v1/devices/{device_id}",
+        "/api/v1/devices/enroll",
+    }
+
+    assert reachable_with_a_user_token <= covered, (
+        "a new organisation-scoped route exists with no cross-tenant test: "
+        f"{sorted(reachable_with_a_user_token - covered)}"
+    )

@@ -19,11 +19,16 @@ The response reports duplicates separately from accepted rather than hiding
 them: a healthy agent recovering from a dropped connection will see a non-zero
 count, and that is success.
 
-AUTHENTICATION
---------------
-Phase 12 identifies the device by its uuid and nothing more. Phase 13 adds the
-device credential that must accompany it - the dependency below is the single
-place that changes, which is why it exists now rather than being inlined.
+AUTHENTICATION (Phase 13)
+-------------------------
+Every route here requires a **device credential**, issued at enrolment and sent
+in `X-Device-Secret`. The uuid in the payload is no longer identity - it is
+checked against the authenticated device and a mismatch is refused, so a device
+cannot upload events in another device's name.
+
+A device credential grants exactly one power: write its own events. It can read
+nothing. A stolen agent secret should let an attacker post nonsense telemetry,
+not browse an organisation.
 """
 
 from __future__ import annotations
@@ -31,7 +36,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from focusguard_backend.api.v1.schemas import (
@@ -39,6 +43,7 @@ from focusguard_backend.api.v1.schemas import (
     HeartbeatUpload,
     IngestResult,
 )
+from focusguard_backend.auth.dependencies import get_current_device
 from focusguard_backend.database.session import get_db
 from focusguard_backend.models.identity import Device
 from focusguard_backend.models.telemetry import DeviceHeartbeat
@@ -50,36 +55,30 @@ logger = get_logger("backend.api.agent")
 router = APIRouter(prefix="/agent", tags=["agent"])
 
 
-def resolve_device(device_uuid: str, db: Session) -> Device:
-    """Find the device sending this data.
+def check_uuid_matches(claimed_uuid: str, device: Device) -> None:
+    """Refuse a payload that claims to be from a different device.
 
-    Phase 13 replaces this with a credential check. Keeping it in one function
-    means that change touches one place, and every endpoint below inherits it.
+    The credential already decided who is calling. This only catches a payload
+    whose uuid disagrees with it - a misconfigured agent, or an attempt to file
+    events under someone else's machine. Either way it is a refusal, not a
+    silent correction: quietly reassigning the events would hide the problem and
+    corrupt the record.
     """
-    device = db.scalar(select(Device).where(Device.device_uuid == device_uuid))
-
-    if device is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Unknown device. Enrol it before uploading.",
-        )
-    if not device.is_active:
+    if claimed_uuid != device.device_uuid:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="This device has been deactivated.",
+            detail="The payload device_uuid does not match the authenticated device.",
         )
-    if device.user_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="This device is not linked to a user.",
-        )
-    return device
 
 
 @router.post("/events", response_model=IngestResult)
-def ingest_events(batch: EventBatchUpload, db: Session = Depends(get_db)) -> IngestResult:
+def ingest_events(
+    batch: EventBatchUpload,
+    device: Device = Depends(get_current_device),
+    db: Session = Depends(get_db),
+) -> IngestResult:
     """Accept a batch of events from an agent."""
-    device = resolve_device(batch.device_uuid, db)
+    check_uuid_matches(batch.device_uuid, device)
     repository = TelemetryRepository(db)
 
     # The batch carries its own session, so an agent that ran offline can upload
@@ -144,13 +143,17 @@ def ingest_events(batch: EventBatchUpload, db: Session = Depends(get_db)) -> Ing
 
 
 @router.post("/heartbeat", status_code=status.HTTP_204_NO_CONTENT)
-def heartbeat(payload: HeartbeatUpload, db: Session = Depends(get_db)) -> None:
+def heartbeat(
+    payload: HeartbeatUpload,
+    device: Device = Depends(get_current_device),
+    db: Session = Depends(get_db),
+) -> None:
     """Report that a device is alive (spec section 36).
 
     Cheap and frequent, so the manager board can show who is working without
     holding a WebSocket open to every machine.
     """
-    device = resolve_device(payload.device_uuid, db)
+    check_uuid_matches(payload.device_uuid, device)
     now = datetime.now(UTC)
 
     session_id = None

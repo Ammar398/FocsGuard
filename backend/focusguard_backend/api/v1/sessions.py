@@ -8,8 +8,10 @@ build a query without one. That is how section 51 isolation is kept: not by
 remembering a filter, but by a function signature that will not compile without
 it.
 
-Phase 13 replaces the temporary user resolution below with a JWT dependency. The
-routes do not change - they already ask for a scope rather than assuming one.
+Phase 13 changed exactly one thing here: `current_scope` now comes from
+`auth.dependencies` and is derived from a **signed token claim** instead of a
+query parameter. The route bodies below are untouched, which was the point of
+writing them against a scope in the first place.
 """
 
 from __future__ import annotations
@@ -18,23 +20,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from focusguard_backend.api.v1.schemas import SessionDetail, SessionSummary
+from focusguard_backend.auth.dependencies import current_scope
 from focusguard_backend.database.session import get_db
 from focusguard_backend.repositories.telemetry import Scope, TelemetryRepository
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
-
-
-def current_scope(
-    user_id: int = Query(..., description="whose sessions (replaced by auth in Phase 13)"),
-) -> Scope:
-    """Resolve what the caller may see.
-
-    Temporary: taking the user from a query parameter is obviously not
-    authentication, and Phase 13 swaps this dependency for a token. It exists now
-    so the routes are already written against a scope rather than being retrofitted
-    later - which is when isolation bugs get introduced.
-    """
-    return Scope.for_user(user_id)
 
 
 @router.get("", response_model=list[SessionSummary])

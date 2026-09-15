@@ -113,10 +113,15 @@ Local SQLite store, event persistence with locally generated UUIDs, `sync_status
 FastAPI, SQLAlchemy models, Alembic migrations, `/api/v1` routers, ingest endpoints, WebSocket for live
 score. **Acceptance:** agent uploads batches; replaying the same batch creates no duplicates.
 
-### Phase 13 — Authentication and RBAC
+### Phase 13 — Authentication and RBAC ✅ COMPLETE
 Argon2, JWT access + refresh, role dependencies, tenant-isolation guard, rate limiting.
 **Acceptance:** a **cross-tenant access test suite** proves a Company A manager receives 403/404 — never
 data — on every org-scoped route.
+
+**Met.** `tests/test_backend_isolation.py` covers every organisation-scoped route with a genuine
+manager token, and includes a guard test that fails when a new such route appears with no cross-tenant
+coverage. Device enrolment (§25) is built server-side here because agent authentication needed a
+credential to check; the agent's own enrolment command and consent screen remain Phase 17.
 
 ### Phase 14 — Student portal
 *(First phase requiring Node, if Option A is chosen.)* Login, session start/stop, live focus ring,

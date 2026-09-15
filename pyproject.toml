@@ -65,6 +65,8 @@ select = ["E", "F", "I", "UP", "B"]
 # are documented to be used exactly that way - it is the framework's dependency
 # injection, not an accidental shared mutable default.
 "backend/focusguard_backend/api/**" = ["B008"]
+# Same reasoning: this module is nothing but FastAPI dependencies.
+"backend/focusguard_backend/auth/dependencies.py" = ["B008"]
 
 [tool.ruff.lint.isort]
 # Without this, ruff treats the workspace packages as third-party and merges them

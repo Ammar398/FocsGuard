@@ -25,10 +25,16 @@ logs/
 *.log
 
 # Model weights — cached outside the repo (see docs/setup_windows.md, spec §45)
-models/
+#
+# NOT a bare `models/` rule. That was here, and it silently excluded
+# backend/focusguard_backend/models/ - the entire SQLAlchemy package - so a
+# clone of the Phase 12 commit could not import the backend at all. Weights live
+# in the cache dir outside the repo anyway, and the extension patterns below
+# catch any that stray in, so the directory rule bought nothing.
 *.onnx
 *.task
 *.pt
+*.tflite
 
 # Frontend
 node_modules/
