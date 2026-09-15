@@ -11,7 +11,7 @@ nobody realises is missing. Failing loudly is the better error.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -84,6 +84,7 @@ class SessionUpload(_Upload):
     focused_seconds: float = Field(default=0, ge=0)
     distracted_seconds: float = Field(default=0, ge=0)
     average_focus_score: float = Field(default=0, ge=0, le=100)
+    longest_focus_block_seconds: float = Field(default=0, ge=0)
 
 
 class EventBatchUpload(_Upload):
@@ -134,6 +135,7 @@ class SessionSummary(BaseModel):
     focused_seconds: float
     distracted_seconds: float
     average_focus_score: float
+    longest_focus_block_seconds: float = 0.0
 
     @property
     def completed(self) -> bool:
@@ -313,3 +315,55 @@ class DeviceOut(BaseModel):
     enrolled_at: datetime | None = None
     revoked_at: datetime | None = None
     is_active: bool
+
+
+# --- reports (Phase 15) -----------------------------------------------------
+
+
+class DayTotalsOut(BaseModel):
+    """One day on the report chart."""
+
+    day: date
+    sessions: int
+    monitored_seconds: float
+    focused_seconds: float
+    distracted_seconds: float
+    average_focus_score: float
+
+
+class ReportSummary(BaseModel):
+    """A window of days, with its totals (spec section 42)."""
+
+    since: datetime
+    until: datetime
+    days: int
+
+    sessions: int
+    monitored_seconds: float
+    focused_seconds: float
+    distracted_seconds: float
+    average_focus_score: float
+
+    #: Every day in the window, including empty ones. A chart that skips them
+    #: draws a flat line across a week off and makes it look like continuous work.
+    daily: list[DayTotalsOut] = Field(default_factory=list)
+
+
+class EvidenceOut(BaseModel):
+    label: str
+    value: str
+
+
+class RecommendationOut(BaseModel):
+    """A suggestion and the data behind it (spec section 9).
+
+    `evidence` is required rather than optional, so there is no shape of this
+    response that carries advice with its reasoning omitted.
+    """
+
+    rule_id: str
+    kind: str
+    priority: str
+    title: str
+    detail: str
+    evidence: list[EvidenceOut]

@@ -113,6 +113,7 @@ def ingest_events(
             focused_seconds=batch.session.focused_seconds,
             distracted_seconds=batch.session.distracted_seconds,
             average_focus_score=batch.session.average_focus_score,
+            longest_focus_block_seconds=batch.session.longest_focus_block_seconds,
         )
 
     device.last_seen_at = datetime.now(UTC)

@@ -174,6 +174,9 @@ class Uploader:
             envelope["focused_seconds"] = report.focused_seconds
             envelope["distracted_seconds"] = report.distracted_seconds
             envelope["average_focus_score"] = report.average_focus_score
+            envelope["longest_focus_block_seconds"] = (
+                report.longest_focus_block_seconds
+            )
 
         return envelope
 

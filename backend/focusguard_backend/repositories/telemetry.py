@@ -161,12 +161,14 @@ class TelemetryRepository:
         focused_seconds: float = 0.0,
         distracted_seconds: float = 0.0,
         average_focus_score: float = 0.0,
+        longest_focus_block_seconds: float = 0.0,
     ) -> None:
         session.ended_at = ended_at
         session.duration_seconds = duration_seconds
         session.focused_seconds = focused_seconds
         session.distracted_seconds = distracted_seconds
         session.average_focus_score = average_focus_score
+        session.longest_focus_block_seconds = longest_focus_block_seconds
         self._db.flush()
 
     # -- ingest (spec section 37) ------------------------------------------

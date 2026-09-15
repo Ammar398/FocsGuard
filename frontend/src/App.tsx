@@ -20,6 +20,9 @@ import { LoginPage } from './pages/LoginPage'
 const SessionPage = lazy(() =>
   import('./pages/SessionPage').then((module) => ({ default: module.SessionPage })),
 )
+const ReportsPage = lazy(() =>
+  import('./pages/ReportsPage').then((module) => ({ default: module.ReportsPage })),
+)
 
 export default function App() {
   return (
@@ -58,6 +61,7 @@ function Shell() {
           <Routes>
             <Route path="/" element={<DashboardPage />} />
             <Route path="/sessions/:id" element={<SessionPage />} />
+            <Route path="/reports" element={<ReportsPage />} />
             {/* An unknown path goes home rather than showing a dead end. */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
@@ -73,9 +77,14 @@ function TopBar() {
   return (
     <header className="border-b border-[var(--color-line)] bg-[var(--color-surface)]">
       <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 p-4">
-        <Link to="/" className="font-semibold">
-          FocusGuard
-        </Link>
+        <nav className="flex items-center gap-5">
+          <Link to="/" className="font-semibold">
+            FocusGuard
+          </Link>
+          <Link to="/reports" className="text-sm hover:opacity-70">
+            Reports
+          </Link>
+        </nav>
 
         <div className="flex items-center gap-4 text-sm">
           <span className="hidden text-[var(--color-muted)] sm:inline">

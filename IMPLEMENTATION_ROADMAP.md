@@ -151,12 +151,25 @@ rendered end to end through the dev proxy against a live backend. See `docs/stud
 **Node:** the existing install at `E:iles` was incomplete (no `node_modules`, so npm could not run) and
 that directory is not writable. A verified Node 22.23.2 now lives in `.tools/node`, gitignored.
 
-### Phase 15 — Student reports and recommendations
+### Phase 15 — Student reports and recommendations ✅ COMPLETE
 Daily/weekly reports, rule-based recommendation engine with evidence attached, CSV export.
 **Acceptance:** every recommendation displays the data that triggered it; an automated test asserts **no
 medical or diagnostic vocabulary** can appear in output (§8).
 
-> **End of Milestone D = the §67 MVP is complete.**
+**Met, both halves.** Evidence is enforced by the dataclass — a recommendation cannot be constructed
+without it. The language guarantee is proven by running **every rule against 2000 randomised
+statistics**, because "cannot appear" is a claim about all inputs, not about the strings someone
+happened to check. A companion test asserts every rule fires under fuzzing, so no rule goes
+unexercised by the language check.
+
+**One real bug found by running it against realistic data:** the distraction rule attributed by total
+time and so named Visual Studio Code — the editor the student was *working in* — as their distraction.
+Attribution now follows the classification. See `docs/reports_and_recommendations.md`.
+
+> **End of Milestone D = the §67 MVP is complete.** ✅
+>
+> Agent → backend → portal runs end to end: monitoring, scoring, upload, auth, dashboard, session
+> timeline, reports, recommendations and export.
 
 ---
 

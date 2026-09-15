@@ -478,6 +478,12 @@ def test_every_org_scoped_route_is_covered_here(two_company_api) -> None:
         "/api/v1/devices",
         "/api/v1/devices/{device_id}",
         "/api/v1/devices/enroll",
+        # Phase 15. Cross-tenant coverage for these lives in
+        # tests/test_backend_reports.py, which is where the fixtures for
+        # uploading real sessions already are.
+        "/api/v1/reports/summary",
+        "/api/v1/reports/recommendations",
+        "/api/v1/reports/export.csv",
     }
 
     assert reachable_with_a_user_token <= covered, (

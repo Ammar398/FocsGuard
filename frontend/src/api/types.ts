@@ -99,3 +99,47 @@ export const EVENT_LABELS: Record<string, string> = {
 export function eventLabel(eventType: string): string {
   return EVENT_LABELS[eventType] ?? eventType.replace(/_/g, ' ').toLowerCase()
 }
+
+// --- reports (Phase 15) -----------------------------------------------------
+
+export interface DayTotals {
+  day: string
+  sessions: number
+  monitored_seconds: number
+  focused_seconds: number
+  distracted_seconds: number
+  average_focus_score: number
+}
+
+export interface ReportSummary {
+  since: string
+  until: string
+  days: number
+  sessions: number
+  monitored_seconds: number
+  focused_seconds: number
+  distracted_seconds: number
+  average_focus_score: number
+  /** Every day in the window, including empty ones. */
+  daily: DayTotals[]
+}
+
+export interface EvidenceItem {
+  label: string
+  value: string
+}
+
+/**
+ * A suggestion and the data behind it.
+ *
+ * `evidence` is non-optional on purpose, mirroring the backend: there is no
+ * shape of this type that carries advice with its reasoning omitted (section 9).
+ */
+export interface RecommendationItem {
+  rule_id: string
+  kind: string
+  priority: 'HIGH' | 'MEDIUM' | 'LOW' | string
+  title: string
+  detail: string
+  evidence: EvidenceItem[]
+}

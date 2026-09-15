@@ -32,7 +32,14 @@
  * else waits on the same promise.
  */
 
-import type { SessionDetail, SessionSummary, TokenPair, User } from './types'
+import type {
+  RecommendationItem,
+  ReportSummary,
+  SessionDetail,
+  SessionSummary,
+  TokenPair,
+  User,
+} from './types'
 
 const REFRESH_STORAGE_KEY = 'focusguard.refresh'
 
@@ -246,4 +253,58 @@ export const api = {
   async session(id: number): Promise<SessionDetail> {
     return request<SessionDetail>(`/sessions/${id}`)
   },
+
+  async report(days: number): Promise<ReportSummary> {
+    return request<ReportSummary>(
+      `/reports/summary?days=${days}&offset_minutes=${localOffsetMinutes()}`,
+    )
+  },
+
+  async recommendations(days: number): Promise<RecommendationItem[]> {
+    return request<RecommendationItem[]>(
+      `/reports/recommendations?days=${days}&offset_minutes=${localOffsetMinutes()}`,
+    )
+  },
+
+  /**
+   * Fetch the CSV as a blob and hand it to the browser.
+   *
+   * A plain link cannot work here: the export needs an Authorization header,
+   * and an <a href> sends none. Fetching it and creating an object URL is the
+   * only way to download an authenticated file without putting the token in a
+   * query string, where it would land in server logs and browser history.
+   */
+  async exportCsv(days: number): Promise<void> {
+    const response = await fetch(`/api/v1/reports/export.csv?days=${days}`, {
+      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+    })
+    if (!response.ok) {
+      throw new ApiError(response.status, await readError(response))
+    }
+
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `focusguard-${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    // Released immediately; the browser has already started the download, and
+    // holding the blob would keep the whole file in memory for the session.
+    URL.revokeObjectURL(url)
+  },
+}
+
+/**
+ * Minutes east of UTC, from the browser.
+ *
+ * The server stores UTC and cannot guess where the user is. Without this,
+ * "sessions after 10pm" and "today" would be computed in the wrong day for
+ * anyone outside UTC - which is almost everyone.
+ *
+ * `getTimezoneOffset` returns minutes *behind* UTC, so the sign is flipped.
+ */
+function localOffsetMinutes(): number {
+  return -new Date().getTimezoneOffset()
 }

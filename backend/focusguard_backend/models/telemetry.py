@@ -80,6 +80,14 @@ class FocusSession(Base, TimestampMixin):
     distracted_seconds: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     average_focus_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
 
+    #: The longest unbroken stretch with no attention event. Stored rather than
+    #: derived for the same reason as the totals above: the score samples it is
+    #: computed from are pruned after 30 days, and recomputing it per request
+    #: would mean scanning thousands of rows to draw one card.
+    longest_focus_block_seconds: Mapped[float] = mapped_column(
+        Float, default=0.0, nullable=False
+    )
+
     vision_events: Mapped[list[VisionEvent]] = relationship(
         back_populates="session", cascade="all, delete-orphan"
     )
