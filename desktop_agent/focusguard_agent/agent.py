@@ -61,6 +61,10 @@ from focusguard_agent.ipc.server import IpcServer
 from focusguard_agent.local_store.database import LocalStore, SessionClock
 from focusguard_agent.scoring.engine import FocusScoringEngine, FocusSnapshot
 from focusguard_agent.scoring.productivity import ProductivityTracker
+from focusguard_agent.synchronization.client import BackendClient
+from focusguard_agent.synchronization.credentials import NotEnrolled, load_credential
+from focusguard_agent.synchronization.uploader import Uploader
+from focusguard_agent.synchronization.worker import SyncWorker
 from focusguard_agent.tools.stop import (
     clear_pid_file,
     clear_stop_flag,
@@ -87,6 +91,7 @@ class SubsystemStatus:
     phone: bool = False
     activity: bool = False
     ipc: bool = False
+    sync: bool = False
 
 
 class FocusGuardAgent:
@@ -139,6 +144,9 @@ class FocusGuardAgent:
         )
         self._ipc: IpcServer | None = None
         self._browser: BrowserMonitor | None = None
+
+        # Upload
+        self._sync: SyncWorker | None = None
 
         # Scoring
         self._scoring = FocusScoringEngine(self.settings.scoring)
@@ -214,6 +222,40 @@ class FocusGuardAgent:
             logger.warning("IPC server could not start", exc_info=True)
             self.status.ipc = False
 
+    def _start_sync(self) -> None:
+        """Start uploading, if this machine is enrolled.
+
+        Not being enrolled is a normal state, not an error. A student with no
+        backend still gets the full local experience, and section 37 requires
+        the agent to work offline regardless.
+        """
+        if not self.settings.sync.enabled:
+            return
+
+        try:
+            credential = load_credential()
+        except NotEnrolled:
+            logger.info("Not enrolled; recording locally only")
+            return
+
+        client = BackendClient(
+            credential.backend_url,
+            credential=credential,
+            timeout=self.settings.sync.request_timeout_seconds,
+        )
+        self._sync = SyncWorker(
+            Uploader(
+                self.store,
+                client,
+                device_uuid=credential.device_uuid,
+                agent_version=self.settings.agent_version,
+                batch_size=self.settings.sync.batch_size,
+            ),
+            interval_seconds=self.settings.sync.upload_interval_seconds,
+            max_backoff_seconds=self.settings.sync.max_backoff_seconds,
+        )
+        self.status.sync = self._sync.start()
+
     def banner(self) -> str:
         def mark(ok: bool, label: str, detail: str = "") -> str:
             return f"  [{'ok ' if ok else '--'}] {label:<22}{detail}"
@@ -239,6 +281,8 @@ class FocusGuardAgent:
             mark(self.status.activity, "application monitor"),
             mark(self.status.ipc, "browser endpoint",
                  f"127.0.0.1:{self.settings.activity.ipc_port}" if self.status.ipc else ""),
+            mark(self.status.sync, "backend upload",
+                 self.settings.sync.backend_url if self.status.sync else "recording locally"),
             "-" * 62,
             f"  Storing to {self.store.path}",
             "=" * 62,
@@ -266,6 +310,7 @@ class FocusGuardAgent:
         self._start_camera()
         self._start_vision()
         self._start_activity()
+        self._start_sync()
 
         print(self.banner())
 
@@ -573,6 +618,21 @@ class FocusGuardAgent:
 
         if self._session_id is not None:
             self.store.end_session(self._session_id)
+
+        # Uploaded on the way out, on this thread, deliberately. The user is
+        # already waiting for the agent to finish, and a session that appears on
+        # the dashboard immediately is far friendlier than one that waits for the
+        # next launch. The session is ended first so the batch carries its totals.
+        if self._sync is not None:
+            print("\n  Uploading ...")
+            final = self._sync.flush()
+            self._sync.stop()
+            if final.blocked:
+                print(f"  Upload refused: {final.blocked_reason}")
+                print("  Re-enrol this machine: python -m focusguard_agent.tools.enroll --status")
+            elif final.failures:
+                # Not an error the user must act on: the rows are still queued.
+                print("  Backend unreachable; this session is queued and will upload later.")
 
         self._print_summary(summary)
         self.store.close()

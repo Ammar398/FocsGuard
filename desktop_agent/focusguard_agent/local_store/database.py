@@ -136,6 +136,14 @@ CREATE INDEX IF NOT EXISTS ix_scores_session   ON focus_scores(session_id, recor
 """
 
 
+#: Tables holding uploadable rows, in the order the backend expects them.
+_EVENT_TABLES = ("vision_events", "activity_events", "focus_scores")
+
+#: Everything `mark_synced` will accept. `sessions` belongs here too - a finished
+#: session that could never be marked would be offered for upload forever.
+_SYNCABLE_TABLES = ("sessions", *_EVENT_TABLES)
+
+
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -414,7 +422,7 @@ class LocalStore:
 
     def take_pending(self, table: str, limit: int = 50) -> list[sqlite3.Row]:
         """Return a batch awaiting upload, oldest first."""
-        if table not in ("vision_events", "activity_events", "focus_scores"):
+        if table not in _EVENT_TABLES:
             raise ValueError(f"Unknown table {table!r}")
 
         with self._cursor() as cursor:
@@ -424,8 +432,52 @@ class LocalStore:
             )
             return cursor.fetchall()
 
+    def sessions_with_pending(self) -> list[sqlite3.Row]:
+        """Sessions that still have anything to upload.
+
+        Includes a session whose own row is already synced but which has gained
+        events since - a live session uploads repeatedly as it runs, so "already
+        sent the session" must not mean "nothing left to send".
+        """
+        with self._cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT * FROM sessions
+                WHERE sync_status = ?
+                   OR id IN (SELECT session_id FROM vision_events   WHERE sync_status = ?)
+                   OR id IN (SELECT session_id FROM activity_events WHERE sync_status = ?)
+                   OR id IN (SELECT session_id FROM focus_scores    WHERE sync_status = ?)
+                ORDER BY id
+                """,
+                (SyncStatus.PENDING.value,) * 4,
+            )
+            return cursor.fetchall()
+
+    def pending_for_session(self, session_id: int, limit: int = 50) -> dict[str, list[sqlite3.Row]]:
+        """One session's pending rows, capped per table.
+
+        Capped per table rather than in total: a session with thousands of score
+        samples would otherwise starve its vision events out of every batch.
+        """
+        pending: dict[str, list[sqlite3.Row]] = {}
+        with self._cursor() as cursor:
+            for table in _EVENT_TABLES:
+                cursor.execute(
+                    f"SELECT * FROM {table} "  # noqa: S608
+                    "WHERE session_id = ? AND sync_status = ? ORDER BY id LIMIT ?",
+                    (session_id, SyncStatus.PENDING.value, limit),
+                )
+                pending[table] = cursor.fetchall()
+        return pending
+
     def mark_synced(self, table: str, ids: list[int]) -> None:
-        if not ids or table not in ("vision_events", "activity_events", "focus_scores"):
+        """Record that rows are safely stored on the server.
+
+        `sessions` is included deliberately: without it a finished session would
+        be offered for upload forever, because its own row would never leave the
+        pending state.
+        """
+        if not ids or table not in _SYNCABLE_TABLES:
             return
 
         placeholders = ",".join("?" * len(ids))

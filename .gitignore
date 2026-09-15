@@ -41,6 +41,11 @@ node_modules/
 dist/
 .vite/
 
+# Local toolchain. Node lives here because E:iles (where it was first
+# unpacked) is not writable by this account, and that incomplete extraction is
+# why npm was missing its module tree. ~80 MB of binaries; never committed.
+.tools/
+
 # Captured media must never be committed (spec §34)
 *.mp4
 *.avi

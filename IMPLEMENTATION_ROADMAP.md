@@ -123,7 +123,20 @@ manager token, and includes a guard test that fails when a new such route appear
 coverage. Device enrolment (§25) is built server-side here because agent authentication needed a
 credential to check; the agent's own enrolment command and consent screen remain Phase 17.
 
-### Phase 14 — Student portal
+### Phase 14a — Agent synchronisation ✅ COMPLETE
+*(Inserted.)* The upload client, the local credential store, the enrolment command with its consent
+notice, and the background upload thread.
+
+**Why this was inserted.** Phase 12's acceptance criterion was *"agent uploads batches"*, but the agent
+had no upload client — Phase 12 proved the endpoint, not the path to it. The portal has nothing to show
+until the agent can upload, so the §53 demo flow could not have run end to end without this. It is pure
+Python and needs no Node, so it is cheap to do first.
+
+**Verified live:** the real agent ran for 25 s and uploaded 21 events; the student read them back
+through the API; with the backend stopped, 5 events stayed queued and uploaded intact once it returned.
+See `docs/synchronization.md`.
+
+### Phase 14b — Student portal
 *(First phase requiring Node, if Option A is chosen.)* Login, session start/stop, live focus ring,
 timers, current app/domain, focus timeline with event overlays (§41).
 **Acceptance:** the §53 student demo flow runs end to end.

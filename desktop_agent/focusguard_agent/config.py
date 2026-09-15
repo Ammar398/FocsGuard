@@ -259,11 +259,19 @@ class SyncSettings(BaseModel):
     backend_url: str = "http://127.0.0.1:8000"
     api_prefix: str = "/api/v1"
 
-    enabled: bool = False  # the backend does not exist until Phase 12
+    #: On by default, because an unenrolled machine already skips uploading
+    #: entirely - there is no credential to use, so nothing is sent and nothing
+    #: is logged as an error. Turning this off is for someone who *is* enrolled
+    #: and wants to stop uploading without unenrolling.
+    enabled: bool = True
+
     batch_size: int = 50
     upload_interval_seconds: float = 30.0
-    max_retries: int = 5
-    retry_backoff_seconds: float = 5.0
+
+    #: A failed pass doubles the wait, up to this ceiling. A backend that is down
+    #: stays down for a while, and retrying every 30s for an hour is a thousand
+    #: pointless requests.
+    max_backoff_seconds: float = 600.0
     request_timeout_seconds: float = 15.0
 
 
