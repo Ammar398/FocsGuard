@@ -33,6 +33,20 @@
  */
 
 import type {
+  Department,
+  EmployeeDetail,
+  Employee,
+  EnrollmentToken,
+  ManagerDashboard,
+  Organization,
+  Project,
+  StrengthReport,
+  Suggestions,
+  Task,
+  TaskDetail,
+  TaskInput,
+} from './managerTypes'
+import type {
   RecommendationItem,
   ReportSummary,
   SessionDetail,
@@ -275,25 +289,142 @@ export const api = {
    * query string, where it would land in server logs and browser history.
    */
   async exportCsv(days: number): Promise<void> {
-    const response = await fetch(`/api/v1/reports/export.csv?days=${days}`, {
-      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
-    })
-    if (!response.ok) {
-      throw new ApiError(response.status, await readError(response))
-    }
-
-    const blob = await response.blob()
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `focusguard-${new Date().toISOString().slice(0, 10)}.csv`
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    // Released immediately; the browser has already started the download, and
-    // holding the blob would keep the whole file in memory for the session.
-    URL.revokeObjectURL(url)
+    await download(`/reports/export.csv?days=${days}`, 'focusguard')
   },
+
+  /** An enrolment token for one of the caller's own computers. */
+  async enrolMyDevice(deviceName: string): Promise<EnrollmentToken> {
+    return request<EnrollmentToken>('/devices', {
+      method: 'POST',
+      body: { device_name: deviceName },
+    })
+  },
+
+  // --- business mode (Milestone E) ----------------------------------------
+
+  async registerOrganization(
+    organizationName: string,
+    email: string,
+    password: string,
+    fullName?: string,
+  ): Promise<User> {
+    return request<User>('/auth/register-organization', {
+      method: 'POST',
+      anonymous: true,
+      body: {
+        organization_name: organizationName,
+        email,
+        password,
+        full_name: fullName || null,
+      },
+    })
+  },
+
+  manager: {
+    organization: () => request<Organization>('/manager/organization'),
+
+    dashboard: (days: number) =>
+      request<ManagerDashboard>(
+        `/manager/dashboard?days=${days}&offset_minutes=${localOffsetMinutes()}`,
+      ),
+
+    departments: () => request<Department[]>('/manager/departments'),
+    createDepartment: (name: string) =>
+      request<Department>('/manager/departments', { method: 'POST', body: { name } }),
+    renameDepartment: (id: number, name: string) =>
+      request<Department>(`/manager/departments/${id}`, { method: 'PATCH', body: { name } }),
+    deleteDepartment: (id: number) =>
+      request<unknown>(`/manager/departments/${id}`, { method: 'DELETE' }),
+
+    employees: () =>
+      request<Employee[]>(`/manager/employees?offset_minutes=${localOffsetMinutes()}`),
+    employee: (id: number, days: number) =>
+      request<EmployeeDetail>(
+        `/manager/employees/${id}?days=${days}&offset_minutes=${localOffsetMinutes()}`,
+      ),
+    createEmployee: (body: {
+      email: string
+      full_name: string
+      department_id?: number | null
+      password?: string | null
+    }) => request<Employee>('/manager/employees', { method: 'POST', body }),
+    updateEmployee: (
+      id: number,
+      body: {
+        full_name?: string
+        department_id?: number | null
+        clear_department?: boolean
+        is_active?: boolean
+        password?: string
+      },
+    ) => request<Employee>(`/manager/employees/${id}`, { method: 'PATCH', body }),
+    strengths: (id: number) => request<StrengthReport>(`/manager/employees/${id}/strengths`),
+
+    projects: () => request<Project[]>('/manager/projects'),
+    createProject: (name: string, description?: string) =>
+      request<Project>('/manager/projects', {
+        method: 'POST',
+        body: { name, description: description || null },
+      }),
+    updateProject: (id: number, body: { name?: string; is_active?: boolean }) =>
+      request<Project>(`/manager/projects/${id}`, { method: 'PATCH', body }),
+
+    tasks: (status?: string) =>
+      request<Task[]>(`/manager/tasks${status ? `?status=${status}` : ''}`),
+    task: (id: number) => request<TaskDetail>(`/manager/tasks/${id}`),
+    createTask: (body: TaskInput) => request<Task>('/manager/tasks', { method: 'POST', body }),
+    updateTask: (id: number, body: TaskInput) =>
+      request<Task>(`/manager/tasks/${id}`, { method: 'PATCH', body }),
+    suggestions: (category: string) =>
+      request<Suggestions>(`/manager/tasks/suggestions?category=${category}`),
+
+    enrolDevice: (userId: number, deviceName: string) =>
+      request<EnrollmentToken>('/devices', {
+        method: 'POST',
+        body: { device_name: deviceName, user_id: userId },
+      }),
+    revokeDevice: (deviceId: number) =>
+      request<unknown>(`/devices/${deviceId}`, { method: 'DELETE' }),
+
+    exportEmployees: (days: number) =>
+      download(
+        `/manager/reports/employees.csv?days=${days}&offset_minutes=${localOffsetMinutes()}`,
+        'focusguard-employees',
+      ),
+    exportTasks: () => download('/manager/reports/tasks.csv', 'focusguard-tasks'),
+  },
+}
+
+/**
+ * Fetch an authenticated file and hand it to the browser.
+ *
+ * A plain link cannot work here: the export needs an Authorization header,
+ * and an <a href> sends none. Fetching it and creating an object URL is the
+ * only way to download an authenticated file without putting the token in a
+ * query string, where it would land in server logs and browser history.
+ */
+async function download(path: string, name: string, retrying = false): Promise<void> {
+  const response = await fetch(`/api/v1${path}`, {
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+  })
+  if (response.status === 401 && !retrying && (await refreshOnce())) {
+    return download(path, name, true)
+  }
+  if (!response.ok) {
+    throw new ApiError(response.status, await readError(response))
+  }
+
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `${name}-${new Date().toISOString().slice(0, 10)}.csv`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  // Released immediately; the browser has already started the download, and
+  // holding the blob would keep the whole file in memory for the session.
+  URL.revokeObjectURL(url)
 }
 
 /**

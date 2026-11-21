@@ -117,6 +117,10 @@ class TaskContext:
 
     expected_minutes: int | None = None
 
+    #: The backend task id when this context came from an assigned task
+    #: (Milestone E). None for a student's self-described task.
+    task_id: int | None = None
+
     def __post_init__(self) -> None:
         self.productive = {item.lower() for item in self.productive}
         self.neutral = {item.lower() for item in self.neutral}
@@ -141,6 +145,29 @@ class TaskContext:
             if subject in self.neutral:
                 return Classification.NEUTRAL
         return None
+
+
+def task_context_from_assignment(assignment: dict) -> TaskContext:
+    """Build a context from a task as `GET /agent/tasks` returns it.
+
+    The manager's rules become the explicit task rules, and the task category
+    supplies the affinity defaults - so a BACKEND task makes an IDE productive
+    even if the manager never listed one.
+    """
+    try:
+        category = TaskCategory(str(assignment.get("category", "OTHER")).upper())
+    except ValueError:
+        category = TaskCategory.OTHER
+
+    return TaskContext(
+        name=str(assignment["title"]),
+        category=category,
+        productive=set(assignment.get("productive_rules") or []),
+        neutral=set(assignment.get("neutral_rules") or []),
+        distracting=set(assignment.get("distracting_rules") or []),
+        expected_minutes=assignment.get("expected_minutes"),
+        task_id=int(assignment["id"]),
+    )
 
 
 class TaskContextEngine:

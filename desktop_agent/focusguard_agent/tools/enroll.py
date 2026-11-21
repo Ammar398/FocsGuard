@@ -42,6 +42,10 @@ from focusguard_agent.synchronization.credentials import (
 )
 from focusguard_shared.utilities import configure_logging
 
+#: Bumped whenever the text below changes, so the recorded consent says which
+#: wording the person actually agreed to (spec sections 25, 62).
+CONSENT_VERSION = "2026-11"
+
 CONSENT = """
 FocusGuard will upload the following to {backend}:
 
@@ -138,6 +142,7 @@ def main(argv: list[str] | None = None) -> int:
                 device_uuid=device_uuid,
                 platform=f"{platform.system()} {platform.release()}",
                 agent_version=settings.agent_version,
+                consent_version=CONSENT_VERSION,
             )
     except EnrollmentFailed as error:
         print(f"\nEnrolment failed: {error}", file=sys.stderr)
@@ -155,6 +160,10 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  device  : {credential.device_uuid}")
     print("\nThe agent will now upload as it runs. Start it with:")
     print('    python -m focusguard_agent.agent --name "Study session"')
+    if credential.organization_id is not None:
+        print("\nOr, to work on a task your manager assigned:")
+        print("    python -m focusguard_agent.tools.tasks")
+        print("    python -m focusguard_agent.agent --assigned-task <id>")
     return 0
 
 

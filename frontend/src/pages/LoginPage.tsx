@@ -1,5 +1,5 @@
 /**
- * Sign in, or create a student account.
+ * Sign in, create a student account, or register an organisation.
  *
  * ONE FORM, TWO MODES
  * -------------------
@@ -21,16 +21,17 @@ import { ApiError } from '../api/client'
 import { useAuth } from '../auth/context'
 
 export function LoginPage() {
-  const { signIn, register } = useAuth()
+  const { signIn, register, registerOrganization } = useAuth()
 
-  const [mode, setMode] = useState<'signin' | 'register'>('signin')
+  const [mode, setMode] = useState<'signin' | 'register' | 'organisation'>('signin')
+  const [organisation, setOrganisation] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const registering = mode === 'register'
+  const registering = mode !== 'signin'
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -38,7 +39,9 @@ export function LoginPage() {
     setBusy(true)
 
     try {
-      if (registering) {
+      if (mode === 'organisation') {
+        await registerOrganization(organisation, email, password, fullName)
+      } else if (registering) {
         await register(email, password, fullName)
       } else {
         await signIn(email, password)
@@ -68,6 +71,17 @@ export function LoginPage() {
           onSubmit={handleSubmit}
           className="space-y-4 rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-6"
         >
+          {mode === 'organisation' && (
+            <Field
+              label="Organisation name"
+              value={organisation}
+              onChange={setOrganisation}
+              type="text"
+              autoComplete="organization"
+              required
+            />
+          )}
+
           {registering && (
             <Field
               label="Your name"
@@ -112,7 +126,13 @@ export function LoginPage() {
             disabled={busy}
             className="w-full rounded-lg bg-[var(--color-accent)] px-4 py-2.5 font-medium text-white transition hover:opacity-90 disabled:opacity-50"
           >
-            {busy ? 'Please wait…' : registering ? 'Create account' : 'Sign in'}
+            {busy
+              ? 'Please wait…'
+              : mode === 'organisation'
+                ? 'Create organisation'
+                : registering
+                  ? 'Create account'
+                  : 'Sign in'}
           </button>
 
           <p className="pt-1 text-center text-sm text-[var(--color-muted)]">
@@ -125,9 +145,24 @@ export function LoginPage() {
               }}
               className="font-medium text-[var(--color-accent)] hover:underline"
             >
-              {registering ? 'Sign in' : 'Create an account'}
+              {registering ? 'Sign in' : 'Create a student account'}
             </button>
           </p>
+          {mode !== 'organisation' && (
+            <p className="text-center text-sm text-[var(--color-muted)]">
+              Managing a team?{' '}
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('organisation')
+                  setError(null)
+                }}
+                className="font-medium text-[var(--color-accent)] hover:underline"
+              >
+                Register your organisation
+              </button>
+            </p>
+          )}
         </form>
 
         <p className="mt-6 text-center text-xs text-[var(--color-muted)]">

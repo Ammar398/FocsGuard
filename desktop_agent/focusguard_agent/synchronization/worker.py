@@ -30,6 +30,7 @@ forever would hide a problem that needs a person.
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 
 from focusguard_agent.synchronization.uploader import SyncSummary, Uploader
 from focusguard_shared.utilities import get_logger
@@ -45,8 +46,13 @@ class SyncWorker:
         uploader: Uploader,
         interval_seconds: float = 30.0,
         max_backoff_seconds: float = 600.0,
+        heartbeat: Callable[[], object] | None = None,
     ) -> None:
         self._uploader = uploader
+        #: Called after every successful pass. The upload alone does not prove
+        #: liveness: a quiet minute with no events uploads nothing, and the
+        #: manager board would show a working employee as offline.
+        self._heartbeat = heartbeat
         self._interval = max(1.0, interval_seconds)
         self._max_backoff = max_backoff_seconds
 
@@ -123,6 +129,13 @@ class SyncWorker:
                 # Recovery is immediate rather than gradual: a server that just
                 # answered is not a server to keep treating as down.
                 self._backoff = self._interval
+
+        if self._heartbeat is not None and not summary.blocked and not summary.failures:
+            try:
+                self._heartbeat()
+            except Exception:  # noqa: BLE001
+                # Liveness is a nicety; it must never stop an upload pass.
+                logger.debug("Heartbeat failed", exc_info=True)
 
         return summary
 

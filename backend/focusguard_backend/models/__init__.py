@@ -7,6 +7,7 @@ invisible to both, and its table silently never gets created.
 
 from focusguard_backend.models.auth import RefreshToken
 from focusguard_backend.models.base import Base, TimestampMixin, utc_now
+from focusguard_backend.models.business import Project, Task
 from focusguard_backend.models.identity import (
     Department,
     Device,
@@ -33,6 +34,8 @@ __all__ = [
     "Organization",
     "RefreshToken",
     "PrivacyConsent",
+    "Project",
+    "Task",
     "TimestampMixin",
     "User",
     "VisionEvent",

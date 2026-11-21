@@ -143,7 +143,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> UserOut
     """Create a student account."""
     problem = validate_password_strength(payload.password)
     if problem:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=problem)
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=problem)
 
     email = payload.email.strip().lower()
     existing = db.scalar(select(User).where(User.email == email))

@@ -63,6 +63,13 @@ class FocusSession(Base, TimestampMixin):
     )
 
     name: Mapped[str] = mapped_column(String(200), nullable=False)
+
+    #: Set when the session was started against an assigned task (spec section
+    #: 29). A task session is simply a focus session that knows its task; see
+    #: models/business.py. Students' sessions leave it NULL.
+    task_id: Mapped[int | None] = mapped_column(
+        ForeignKey("tasks.id", ondelete="SET NULL"), index=True
+    )
     task_name: Mapped[str | None] = mapped_column(String(200))
     task_category: Mapped[str | None] = mapped_column(String(40))
 
@@ -87,6 +94,16 @@ class FocusSession(Base, TimestampMixin):
     longest_focus_block_seconds: Mapped[float] = mapped_column(
         Float, default=0.0, nullable=False
     )
+
+    #: Classified activity totals, written by the retention job just before it
+    #: deletes this session's raw activity rows (section 45). NULL while the raw
+    #: rows still exist - they are then the source of truth. Without these, a
+    #: task finished three months ago would lose its productivity score, and with
+    #: it part of the employee's strength history.
+    productive_seconds: Mapped[float | None] = mapped_column(Float)
+    neutral_seconds: Mapped[float | None] = mapped_column(Float)
+    distracting_seconds: Mapped[float | None] = mapped_column(Float)
+    raw_events_pruned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     vision_events: Mapped[list[VisionEvent]] = relationship(
         back_populates="session", cascade="all, delete-orphan"

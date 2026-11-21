@@ -253,8 +253,20 @@ class FocusGuardAgent:
             ),
             interval_seconds=self.settings.sync.upload_interval_seconds,
             max_backoff_seconds=self.settings.sync.max_backoff_seconds,
+            heartbeat=lambda: client.heartbeat(
+                session_uuid=self._session_uuid(),
+                pending_events=sum(self.store.pending_counts().values()),
+                agent_version=self.settings.agent_version,
+            ),
         )
         self.status.sync = self._sync.start()
+
+    def _session_uuid(self) -> str | None:
+        """The running session's uuid, for the heartbeat's "working on" field."""
+        if self._session_id is None:
+            return None
+        row = self.store.get_session(self._session_id)
+        return row["uuid"] if row is not None else None
 
     def banner(self) -> str:
         def mark(ok: bool, label: str, detail: str = "") -> str:
@@ -323,6 +335,7 @@ class FocusGuardAgent:
             task_name=self.task.name if self.task else None,
             task_category=str(self.task.category) if self.task else None,
             started_at=started_wall,
+            task_id=self.task.task_id if self.task else None,
         )
         logger.info("Session %d started", self._session_id)
 
@@ -692,6 +705,11 @@ def main() -> int:
         "--productive", nargs="*", default=[], help="apps/domains counting as work"
     )
     parser.add_argument("--distracting", nargs="*", default=[], help="apps/domains that do not")
+    parser.add_argument(
+        "--assigned-task",
+        type=int,
+        help="work on a task your manager assigned (see: python -m focusguard_agent.tools.tasks)",
+    )
     parser.add_argument("--seconds", type=float, help="stop automatically after this long")
     args = parser.parse_args()
 
@@ -715,7 +733,16 @@ def main() -> int:
             distracting=set(args.distracting),
         )
 
-    agent = FocusGuardAgent(settings=settings, session_name=args.name, task=task)
+    session_name = args.name
+    if args.assigned_task is not None:
+        assigned = _load_assigned_task(args.assigned_task)
+        if assigned is None:
+            return 1
+        task = assigned
+        if session_name == parser.get_default("name"):
+            session_name = assigned.name
+
+    agent = FocusGuardAgent(settings=settings, session_name=session_name, task=task)
 
     def handle_signal(*_: object) -> None:
         agent.stop()
@@ -724,6 +751,42 @@ def main() -> int:
     signal.signal(signal.SIGTERM, handle_signal)
 
     return agent.run(duration_seconds=args.seconds)
+
+
+def _load_assigned_task(task_id: int) -> TaskContext | None:
+    """Fetch one assigned task from the backend and turn it into a TaskContext.
+
+    Interactive and explicit: the employee chose this task, so a failure is
+    reported to them rather than silently falling back to an untagged session
+    that would never show up against the task.
+    """
+    from focusguard_agent.activity_monitor.task_context import task_context_from_assignment
+    from focusguard_agent.synchronization.client import TasksUnavailable
+
+    try:
+        credential = load_credential()
+    except NotEnrolled:
+        print("This machine is not enrolled with a business backend.", file=sys.stderr)
+        print("Enrol first: python -m focusguard_agent.tools.enroll --token <token>",
+              file=sys.stderr)
+        return None
+
+    try:
+        with BackendClient(credential.backend_url, credential=credential) as client:
+            tasks = client.assigned_tasks()
+    except TasksUnavailable as error:
+        print(f"Could not fetch your assigned tasks: {error}", file=sys.stderr)
+        return None
+
+    for item in tasks:
+        if int(item["id"]) == task_id:
+            context = task_context_from_assignment(item)
+            print(f"Working on task #{task_id}: {context.name} ({context.category})")
+            return context
+
+    print(f"Task #{task_id} is not one of your open tasks.", file=sys.stderr)
+    print("List them with: python -m focusguard_agent.tools.tasks", file=sys.stderr)
+    return None
 
 
 if __name__ == "__main__":

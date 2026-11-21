@@ -43,6 +43,11 @@ _hasher = PasswordHasher(
 #: a real one. Without this, a fast "no such user" reply enumerates accounts.
 _DUMMY_HASH = _hasher.hash("focusguard-timing-equaliser")
 
+#: Stored for an account that may not sign in at all - an employee whose manager
+#: created them without a portal password, so they exist only as the person an
+#: agent reports for. Not a valid Argon2 string, so nothing can ever match it.
+NO_LOGIN_HASH = "!no-login"
+
 MIN_PASSWORD_LENGTH = 8
 MAX_PASSWORD_LENGTH = 256
 
@@ -54,8 +59,9 @@ def hash_password(password: str) -> str:
 
 def verify_password(password: str, password_hash: str | None) -> bool:
     """Check a password, in constant-ish time whether the user exists or not."""
-    if not password_hash:
-        # No such user. Do the work anyway so the timing does not give it away.
+    if not password_hash or password_hash == NO_LOGIN_HASH:
+        # No such user, or one who cannot sign in. Do the work anyway so the
+        # timing does not give it away.
         try:
             _hasher.verify(_DUMMY_HASH, password)
         except (VerifyMismatchError, VerificationError, InvalidHashError):

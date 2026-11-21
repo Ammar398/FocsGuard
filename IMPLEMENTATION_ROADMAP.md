@@ -1,6 +1,6 @@
 # FocusGuard — IMPLEMENTATION_ROADMAP.md
 
-**Status:** Proposal — awaiting approval.
+**Status:** All milestones (A–F, Phases 0–23) complete as of 2026-11-21. 665 tests passing.
 **Rule:** the project must be **runnable at the end of every phase**. No phase may leave the tree broken.
 
 Your 23 phases (§54) are preserved. I have grouped them into six milestones, added explicit
@@ -173,28 +173,30 @@ Attribution now follows the classification. See `docs/reports_and_recommendation
 
 ---
 
-## Milestone E — Business mode (your Phases 16–22)
+## Milestone E — Business mode (your Phases 16–22) ✅ COMPLETE
+
+Re-planned on 2026-11-21 after the second audit (`CURRENT_STATE.md`). The as-built schema decisions
+are in `ARCHITECTURE_PLAN.md` §14.
 
 | Phase | Deliverable | Acceptance |
 |---|---|---|
-| 16 | Organisations, managers, employees, departments | Full CRUD under strict tenant isolation |
-| 17 | Device enrollment | Single-use expiring token; consent screen shown and recorded; token cannot be reused |
-| 18 | Manager dashboard | Live device status, aggregate productivity, top apps/domains |
-| 19 | Projects, tasks, assignment | Per-task productive/neutral/distracting rules |
-| 20 | Task-specific scoring | A `TASK_SESSION` yields a task focus score and productivity score |
-| 21 | Employee historical analytics | `employee_metrics` per task category; **"insufficient data" below 3 completed tasks** |
-| 22 | Task-assignment recommendation | Ranked candidates, each with its supporting evidence and comparative-only phrasing |
+| 16 | `POST /auth/register-organization`; manager CRUD for departments and employees | A new manager owns a new tenant only; every `/manager/*` route is in the cross-tenant test |
+| 17 | Consent recorded server-side at enrolment; manager enrols an employee device from the portal | Token single-use and expiring (already true); a `privacy_consents` row exists after enrolment |
+| 18 | Manager dashboard API + page | Live/offline from heartbeats; productive/neutral/distracting totals; top apps and domains; per-department focus |
+| 19 | Projects, tasks, assignment, per-task productive/neutral/distracting rules; `GET /agent/tasks`; `--assigned-task` | Agent classifies with the task's own rules; a device sees only its own user's open tasks |
+| 20 | Task sessions (`focus_sessions.task_id`) and task scores | A task's focus score and productivity score are computed from its sessions and explained |
+| 21 | Employee strength analytics per task category | **"Insufficient data" below 3 completed tasks**; outcome-weighted composite; phrasing fuzz-tested |
+| 22 | Assignee suggestions for a new task | Ranked candidates, each with evidence; comparative-only phrasing; manager makes the choice |
 
 ---
 
-## Milestone F — Hardening (your Phase 23)
+## Milestone F — Hardening (your Phase 23) ✅ COMPLETE
 
-Unit tests for scoring/classification/recommendations; integration tests for ingest and isolation; the
-**privacy dependency-audit test** (asserts no keyboard/clipboard/screen-capture library is importable in
-the agent); performance profiling; retention verification; the full `docs/` set (§63); the README (§64);
-and the §53 demo script.
-
----
+* Alembic migration for the business schema, verified by `upgrade head` on a fresh database
+* `scripts/seed_demo.py` — a demo organisation with history, so the §53 business demo works on day one
+* Manager CSV exports; print-to-PDF stylesheet for every report page (§52)
+* Docs completed to the §63 list; README updated to §64
+* Full test run, lint, frontend type-check and build
 
 ## Sequencing rationale
 
@@ -213,6 +215,20 @@ run it, and how to test it (Rule 5).
 
 ---
 
-## Immediate next step
+## What was delivered in Milestones E–F (2026-11-21)
 
-Awaiting your approval on three questions (see the summary message), after which **Phase 1** begins.
+* Phases 16–22 as tabled above, every acceptance criterion covered by `tests/test_backend_business.py`,
+  `tests/test_business_logic.py` and `tests/test_agent_tasks.py` (+52 tests).
+* Two gaps found and fixed along the way: the agent never sent heartbeats (the manager board would
+  have shown working employees as offline), and the server never applied the §45 retention window.
+* A student had no way to obtain an enrolment token without calling the API; the dashboard now has
+  *Connect a computer*.
+* Two Alembic migrations, verified by upgrade → `alembic check` → downgrade.
+* `scripts/seed_demo.py`, full docs set (§63), README rewritten (§64), print-to-PDF reports (§52).
+
+## Possible next steps (not required by the spec)
+
+* httpOnly cookie for the refresh token (with CSRF protection)
+* Password reset by email
+* A packaged agent installer and tray icon showing the monitoring indicator
+* PostgreSQL in `docker-compose.yml` for a multi-machine deployment

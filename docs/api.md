@@ -44,6 +44,25 @@ There was no reason to fall back to Flask.
 | `POST` | `/api/v1/agent/heartbeat` | **device** | report device liveness |
 | `GET` | `/api/v1/sessions` | user | list sessions |
 | `GET` | `/api/v1/sessions/{id}` | user | one session with its full timeline |
+| `GET` | `/api/v1/reports/summary` | user | daily totals over a window |
+| `GET` | `/api/v1/reports/recommendations` | user | rule output, each with evidence |
+| `GET` | `/api/v1/reports/export.csv` | user | the caller's sessions as CSV |
+| `POST` | `/api/v1/auth/register-organization` | none | create an organisation and its first manager |
+| `GET` | `/api/v1/agent/tasks` | **device** | the open tasks assigned to this device's user |
+| `GET` | `/api/v1/manager/organization` | manager | the caller's organisation |
+| `GET` | `/api/v1/manager/dashboard?days=` | manager | §26 overview: online, tasks, time split, top apps/domains, teams |
+| `GET` `POST` | `/api/v1/manager/departments` | manager | list / create |
+| `PATCH` `DELETE` | `/api/v1/manager/departments/{id}` | manager | rename / delete (people kept) |
+| `GET` `POST` | `/api/v1/manager/employees` | manager | list with today's stats / create (password optional) |
+| `GET` `PATCH` | `/api/v1/manager/employees/{id}` | manager | §27 detail / update, deactivate, set password |
+| `GET` | `/api/v1/manager/employees/{id}/strengths` | manager | §30 task-category history |
+| `GET` `POST` | `/api/v1/manager/projects` | manager | list / create |
+| `PATCH` | `/api/v1/manager/projects/{id}` | manager | rename, archive |
+| `GET` `POST` | `/api/v1/manager/tasks` | manager | list (filters) / create with rules |
+| `GET` | `/api/v1/manager/tasks/suggestions?category=` | manager | §31 ranked candidates with reasons |
+| `GET` `PATCH` | `/api/v1/manager/tasks/{id}` | manager | §29 detail with scores / assign, status, rating, rework, rules |
+| `GET` | `/api/v1/manager/reports/employees.csv` | manager | per-employee totals |
+| `GET` | `/api/v1/manager/reports/tasks.csv` | manager | per-task outcomes and scores |
 
 **user** means a bearer access token; **device** means an `X-Device-Secret`
 header. They are not interchangeable — see *Authentication* below.
@@ -260,11 +279,24 @@ in source — a shipped default is exactly how real systems get compromised.
 
 ---
 
+## Business mode
+
+Every `/manager/*` route requires the MANAGER role at the router level and reads through
+`BusinessRepository(db, organization_id)`, bound to the organisation in the caller's token. An id from
+another organisation returns the same 404 as an id that does not exist. Details and formulas:
+[business_mode.md](business_mode.md).
+
+`SessionUpload.task_id` (optional) links an uploaded session to an assigned task. The server accepts the
+link only for a task in the device's organisation that is assigned to the device's user; otherwise the
+session is stored without it.
+
+`EnrollDeviceRequest.consent_version` (optional) records a `privacy_consents` row at enrolment.
+
+---
+
 ## Not yet done
 
-**The agent side of enrolment.** The backend issues and checks device
-credentials, but the agent does not yet store one or upload with it — it writes
-to its local SQLite store. Phase 17 adds the agent's enrolment command, the
-consent screen (§25) and the upload client.
-
 **Password reset.** Needs email delivery, which nothing in the project has yet.
+
+**httpOnly refresh-token cookie.** The portal keeps the refresh token in `localStorage`; moving it to a
+`SameSite` cookie needs CSRF protection and is the next hardening step (see `frontend/src/api/client.ts`).

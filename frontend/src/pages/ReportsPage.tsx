@@ -265,6 +265,13 @@ function ExportPanel({ days }: { days: number }) {
       >
         {busy ? 'Preparing…' : 'Download CSV'}
       </button>
+      <button
+        type="button"
+        onClick={() => window.print()}
+        className="no-print mt-3 ml-2 rounded-lg border border-[var(--color-line)] px-3 py-1.5 text-sm font-medium hover:border-[var(--color-accent)]"
+      >
+        Print / Save as PDF
+      </button>
 
       {error !== null && (
         <p role="alert" className="mt-2 text-sm text-[var(--color-focus-low)]">

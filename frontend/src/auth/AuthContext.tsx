@@ -58,14 +58,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const registerOrganization = useCallback(
+    async (organizationName: string, email: string, password: string, fullName: string) => {
+      await api.registerOrganization(organizationName, email, password, fullName)
+      setUser(await api.login(email, password))
+    },
+    [],
+  )
+
   const signOut = useCallback(async () => {
     await api.logout()
     setUser(null)
   }, [])
 
   const value = useMemo(
-    () => ({ user, loading, signIn, register, signOut }),
-    [user, loading, signIn, register, signOut],
+    () => ({ user, loading, signIn, register, registerOrganization, signOut }),
+    [user, loading, signIn, register, registerOrganization, signOut],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

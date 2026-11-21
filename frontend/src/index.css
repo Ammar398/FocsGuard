@@ -54,3 +54,35 @@ body {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
+
+/*
+ * Print = PDF export (spec section 52).
+ *
+ * "Print / Save as PDF" on any report page opens the browser's own dialog,
+ * where Save as PDF is built in. Controls are hidden and the light palette is
+ * forced, so a report printed from dark mode is not a page of black ink.
+ */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  :root,
+  body {
+    --color-ink: #0f172a;
+    --color-muted: #475569;
+    --color-surface: #ffffff;
+    --color-canvas: #ffffff;
+    --color-line: #cbd5e1;
+    background: #ffffff;
+    color-scheme: light;
+  }
+
+  section {
+    break-inside: avoid;
+  }
+
+  @page {
+    margin: 14mm;
+  }
+}

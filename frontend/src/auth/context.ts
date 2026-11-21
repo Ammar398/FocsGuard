@@ -17,6 +17,13 @@ export interface AuthState {
   loading: boolean
   signIn: (email: string, password: string) => Promise<void>
   register: (email: string, password: string, fullName: string) => Promise<void>
+  /** Create a new organisation with the caller as its first manager. */
+  registerOrganization: (
+    organizationName: string,
+    email: string,
+    password: string,
+    fullName: string,
+  ) => Promise<void>
   signOut: () => Promise<void>
 }
 

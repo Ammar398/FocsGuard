@@ -91,3 +91,27 @@ class SessionState(StrEnum):
     RUNNING = "RUNNING"
     PAUSED = "PAUSED"
     ENDED = "ENDED"
+
+
+class TaskStatus(StrEnum):
+    """Lifecycle of an assigned task (spec section 28).
+
+    COMPLETED is set by the manager, not the agent: "done" is a judgement about
+    the work, and only completed tasks feed strength analytics (section 30).
+    """
+
+    TODO = "TODO"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+
+
+#: Statuses an employee's agent may start a session against.
+OPEN_TASK_STATUSES: tuple[TaskStatus, ...] = (TaskStatus.TODO, TaskStatus.IN_PROGRESS)
+
+
+class TaskPriority(StrEnum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    URGENT = "URGENT"

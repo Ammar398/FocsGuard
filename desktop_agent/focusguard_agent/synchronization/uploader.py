@@ -160,6 +160,10 @@ class Uploader:
             "task_name": row["task_name"],
             "task_category": row["task_category"],
         }
+        if row["task_id"] is not None:
+            # Only sent when set, so a student's upload is byte-for-byte what it
+            # was before business mode existed.
+            envelope["task_id"] = row["task_id"]
 
         if not row["ended_at"]:
             # Still running. Totals would be wrong and would have to be corrected

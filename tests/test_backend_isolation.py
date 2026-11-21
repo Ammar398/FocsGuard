@@ -484,6 +484,23 @@ def test_every_org_scoped_route_is_covered_here(two_company_api) -> None:
         "/api/v1/reports/summary",
         "/api/v1/reports/recommendations",
         "/api/v1/reports/export.csv",
+        # Milestone E. Cross-tenant coverage for every manager route lives in
+        # tests/test_backend_business.py (test_alpha_lists_contain_nothing_of_beta
+        # and test_alpha_cannot_read_or_write_betas_records_by_id).
+        "/api/v1/manager/organization",
+        "/api/v1/manager/dashboard",
+        "/api/v1/manager/departments",
+        "/api/v1/manager/departments/{department_id}",
+        "/api/v1/manager/employees",
+        "/api/v1/manager/employees/{employee_id}",
+        "/api/v1/manager/employees/{employee_id}/strengths",
+        "/api/v1/manager/projects",
+        "/api/v1/manager/projects/{project_id}",
+        "/api/v1/manager/tasks",
+        "/api/v1/manager/tasks/suggestions",
+        "/api/v1/manager/tasks/{task_id}",
+        "/api/v1/manager/reports/employees.csv",
+        "/api/v1/manager/reports/tasks.csv",
     }
 
     assert reachable_with_a_user_token <= covered, (

@@ -80,6 +80,11 @@ class SessionUpload(_Upload):
     task_name: str | None = Field(default=None, max_length=200)
     task_category: str | None = Field(default=None, max_length=40)
 
+    #: The assigned task this session was started against (spec section 29).
+    #: Checked server-side: it must belong to this device's user and organisation,
+    #: or the session is stored without a task rather than refused.
+    task_id: int | None = Field(default=None, ge=1)
+
     duration_seconds: float = Field(default=0, ge=0)
     focused_seconds: float = Field(default=0, ge=0)
     distracted_seconds: float = Field(default=0, ge=0)
@@ -127,6 +132,7 @@ class SessionSummary(BaseModel):
     id: int
     session_uuid: str
     name: str
+    task_id: int | None = None
     task_name: str | None = None
     task_category: str | None = None
     started_at: datetime
@@ -282,6 +288,11 @@ class EnrollDeviceRequest(_Upload):
     device_uuid: str = Field(min_length=8, max_length=64)
     platform: str | None = Field(default=None, max_length=60)
     agent_version: str | None = Field(default=None, max_length=40)
+
+    #: Version of the consent notice the person accepted on this machine
+    #: (spec sections 25, 62). Recorded as a `privacy_consents` row so the
+    #: employee - and an auditor - can see what was agreed to and when.
+    consent_version: str | None = Field(default=None, max_length=20)
 
 
 class DeviceCredentialOut(BaseModel):

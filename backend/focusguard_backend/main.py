@@ -30,7 +30,15 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from focusguard_backend.api.v1 import agent, auth, devices, reports, sessions
+from focusguard_backend.api.v1 import (
+    agent,
+    auth,
+    devices,
+    manager,
+    organizations,
+    reports,
+    sessions,
+)
 from focusguard_backend.api.v1.schemas import HealthResponse
 from focusguard_backend.database.session import create_all, database_url, get_engine
 from focusguard_shared.utilities import configure_logging, get_logger
@@ -84,10 +92,12 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix=API_PREFIX)
+app.include_router(organizations.router, prefix=API_PREFIX)
 app.include_router(devices.router, prefix=API_PREFIX)
 app.include_router(agent.router, prefix=API_PREFIX)
 app.include_router(sessions.router, prefix=API_PREFIX)
 app.include_router(reports.router, prefix=API_PREFIX)
+app.include_router(manager.router, prefix=API_PREFIX)
 
 
 @app.get("/health", response_model=HealthResponse, tags=["system"])

@@ -128,3 +128,38 @@ python -c "from focusguard_agent.local_store.database import LocalStore; s=Local
 Or open the file with any SQLite browser — it is a plain, unencrypted database on
 your own machine, which is deliberate: the user should be able to see exactly
 what FocusGuard knows about them.
+
+---
+
+## The backend database
+
+SQLAlchemy models in `backend/focusguard_backend/models/`, migrated by Alembic
+(`backend/focusguard_backend/database/migrations/versions/`). SQLite in development, PostgreSQL in
+production via `DATABASE_URL`.
+
+| Table | Purpose | Tenant key |
+|---|---|---|
+| `organizations` | A business | — |
+| `users` | Students, managers, employees (one table, `role` column) | `organization_id` (NULL for students) |
+| `departments` | Teams within an organisation | `organization_id` |
+| `devices` | Enrolled agents; hashed enrolment token and device secret | `organization_id` |
+| `privacy_consents` | Append-only record of accepted notices | via `user_id` |
+| `refresh_tokens` | Hashed, rotating, family-revocable | via `user_id` |
+| `projects` | Groups of tasks | `organization_id` |
+| `tasks` | Assigned work, rules (JSON lists), status, rating, rework | `organization_id` |
+| `focus_sessions` | One monitoring session; `task_id` makes it a task session; totals | `organization_id` |
+| `vision_events` | Attention events (UNIQUE `event_uuid`) | `organization_id` |
+| `activity_events` | Application / domain spans with classification and rule source | `organization_id` |
+| `focus_scores` | ~1 Hz score samples | `organization_id` |
+| `device_heartbeats` | Liveness pings | via `device_id` |
+
+`organization_id` is denormalised onto every tenant row so isolation is one indexed predicate.
+Why some planned tables were folded together (`task_assignments`, `task_sessions`, `employee_metrics`):
+`ARCHITECTURE_PLAN.md` §14.
+
+### Server retention
+
+`python -m focusguard_backend.tasks.retention [--days 30] [--dry-run]` writes each old session's
+productive / neutral / distracting seconds onto the session row, then deletes its raw events, activity
+spans and score samples. Task scores and strength history are unchanged by it
+(`tests/test_backend_retention.py`).

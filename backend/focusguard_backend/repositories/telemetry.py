@@ -95,6 +95,7 @@ class TelemetryRepository:
         task_name: str | None = None,
         task_category: str | None = None,
         agent_version: str | None = None,
+        task_id: int | None = None,
     ) -> FocusSession:
         """Create a session, or return the existing one with the same uuid.
 
@@ -114,6 +115,7 @@ class TelemetryRepository:
             name=name,
             task_name=task_name,
             task_category=task_category,
+            task_id=task_id,
             started_at=started_at,
             agent_version=agent_version,
         )

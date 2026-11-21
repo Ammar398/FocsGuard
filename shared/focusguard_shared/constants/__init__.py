@@ -9,12 +9,15 @@ from focusguard_shared.constants.categories import (
 )
 from focusguard_shared.constants.enums import (
     GPU_VENDOR_IDS,
+    OPEN_TASK_STATUSES,
     PROVIDER_PREFERENCE,
     GpuVendor,
     InferenceProvider,
     MonitorProfile,
     SessionState,
     SyncStatus,
+    TaskPriority,
+    TaskStatus,
     UserRole,
 )
 from focusguard_shared.constants.events import (
@@ -31,6 +34,7 @@ __all__ = [
     "EVENT_SUPERSEDES",
     "GPU_VENDOR_IDS",
     "MIN_TASKS_FOR_STRENGTH_CLAIM",
+    "OPEN_TASK_STATUSES",
     "PENALISING_VISION_EVENTS",
     "PROVIDER_PREFERENCE",
     "ActivityCategory",
@@ -45,6 +49,8 @@ __all__ = [
     "SessionState",
     "SyncStatus",
     "TaskCategory",
+    "TaskPriority",
+    "TaskStatus",
     "UserRole",
     "VisionEventType",
     "resolve_superseded",

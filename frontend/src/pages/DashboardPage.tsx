@@ -19,9 +19,10 @@
  * one this specification asks for.
  */
 
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
-import { api } from '../api/client'
+import { ApiError, api } from '../api/client'
 import type { SessionSummary } from '../api/types'
 import { Card, StatCard } from '../components/StatCard'
 import { FocusRing } from '../components/FocusRing'
@@ -229,9 +230,64 @@ python -m focusguard_agent.agent --name "Study session"
 python -m focusguard_agent.tools.stop`}</code>
       </pre>
 
+      <ConnectComputer />
+
       <p className="mt-3 text-xs text-[var(--color-muted)]">
         This page refreshes on its own roughly every {pollSeconds} seconds.
       </p>
     </Card>
+  )
+}
+
+/**
+ * Get an enrolment token for one of your own computers (spec section 25).
+ *
+ * The token is shown once and works once, for an hour - the server keeps only a
+ * hash of it. Typing it into the agent is what connects that machine to this
+ * account; until then the agent records locally and uploads nothing.
+ */
+function ConnectComputer() {
+  const [token, setToken] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function create() {
+    setBusy(true)
+    setError(null)
+    try {
+      const result = await api.enrolMyDevice('My computer')
+      setToken(result.enrollment_token)
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : 'Could not create a token.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="mt-4">
+      {token === null ? (
+        <button
+          type="button"
+          onClick={() => void create()}
+          disabled={busy}
+          className="rounded-lg border border-[var(--color-line)] px-3 py-1.5 text-sm font-medium hover:border-[var(--color-accent)] disabled:opacity-50"
+        >
+          {busy ? 'Creating…' : 'Connect a computer'}
+        </button>
+      ) : (
+        <div className="rounded-lg border border-[var(--color-accent)]/40 p-3 text-sm">
+          <p className="font-medium">Your token — shown once, valid for one hour</p>
+          <code className="mt-2 block break-all rounded bg-[var(--color-canvas)] p-2 text-xs">
+            python -m focusguard_agent.tools.enroll --token {token}
+          </code>
+        </div>
+      )}
+      {error !== null && (
+        <p role="alert" className="mt-2 text-sm text-[var(--color-focus-low)]">
+          {error}
+        </p>
+      )}
+    </div>
   )
 }

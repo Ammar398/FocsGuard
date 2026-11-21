@@ -51,7 +51,7 @@ from focusguard_shared.utilities.paths import app_data_dir
 
 logger = get_logger("local_store.database")
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     name          TEXT NOT NULL,
     task_name     TEXT,
     task_category TEXT,
+    task_id       INTEGER,
     started_at    TEXT NOT NULL,
     ended_at      TEXT,
     agent_version TEXT NOT NULL,
@@ -194,6 +195,17 @@ class LocalStore:
     def _migrate(self) -> None:
         with self._lock:
             self._connection.executescript(_SCHEMA)
+
+            # Version 2 (Milestone E): a session can belong to an assigned task.
+            # CREATE TABLE IF NOT EXISTS does not add a column to a table that
+            # already exists, so a store created by an older agent is upgraded
+            # here, in place, without losing anything queued in it.
+            columns = {
+                row[1] for row in self._connection.execute("PRAGMA table_info(sessions)")
+            }
+            if "task_id" not in columns:
+                self._connection.execute("ALTER TABLE sessions ADD COLUMN task_id INTEGER")
+                logger.info("Local store upgraded: sessions.task_id added")
             self._connection.execute(
                 "INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', ?)",
                 (str(SCHEMA_VERSION),),
@@ -232,17 +244,19 @@ class LocalStore:
         task_name: str | None = None,
         task_category: str | None = None,
         started_at: datetime | None = None,
+        task_id: int | None = None,
     ) -> int:
         with self._cursor() as cursor:
             cursor.execute(
-                """INSERT INTO sessions(uuid, name, task_name, task_category,
+                """INSERT INTO sessions(uuid, name, task_name, task_category, task_id,
                                         started_at, agent_version)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (
                     str(uuid_module.uuid4()),
                     name,
                     task_name,
                     task_category,
+                    task_id,
                     (started_at or datetime.now(UTC)).isoformat(),
                     agent_version,
                 ),

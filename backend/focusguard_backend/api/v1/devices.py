@@ -56,7 +56,7 @@ from focusguard_backend.auth.tokens import (
 )
 from focusguard_backend.database.session import get_db
 from focusguard_backend.models.base import as_utc
-from focusguard_backend.models.identity import Device, User
+from focusguard_backend.models.identity import Device, PrivacyConsent, User
 from focusguard_shared.constants import UserRole
 from focusguard_shared.utilities import get_logger
 
@@ -188,6 +188,17 @@ def enroll(payload: EnrollDeviceRequest, db: Session = Depends(get_db)) -> Devic
     # is worthless afterwards.
     device.enrollment_token_hash = None
     device.enrollment_expires_at = None
+
+    if payload.consent_version and device.user_id is not None:
+        # Append-only evidence of what this person accepted on this machine.
+        db.add(
+            PrivacyConsent(
+                user_id=device.user_id,
+                device_id=device.id,
+                consent_version=payload.consent_version,
+                granted_at=datetime.now(UTC),
+            )
+        )
 
     db.commit()
     db.refresh(device)

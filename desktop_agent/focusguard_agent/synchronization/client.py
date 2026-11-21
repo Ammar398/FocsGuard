@@ -67,6 +67,10 @@ class EnrollmentFailed(Exception):
     """The enrolment token was refused. A new one is needed."""
 
 
+class TasksUnavailable(Exception):
+    """The assigned-task list could not be fetched."""
+
+
 class BackendClient:
     """Talks to one backend, as one device."""
 
@@ -104,6 +108,7 @@ class BackendClient:
         device_uuid: str,
         platform: str | None = None,
         agent_version: str | None = None,
+        consent_version: str | None = None,
     ) -> DeviceCredential:
         """Exchange a one-time enrolment token for a lasting credential.
 
@@ -119,6 +124,7 @@ class BackendClient:
                     "device_uuid": device_uuid,
                     "platform": platform,
                     "agent_version": agent_version,
+                    "consent_version": consent_version,
                 },
                 timeout=self._timeout,
             )
@@ -169,6 +175,31 @@ class BackendClient:
             },
             expect=204,
         )
+
+    def assigned_tasks(self) -> list[dict[str, Any]]:
+        """The open tasks assigned to this device's user (Milestone E).
+
+        Raises `TasksUnavailable` with a readable reason, because this is called
+        interactively when an employee starts a task and they need to know why
+        it did not work.
+        """
+        if self._credential is None:
+            raise TasksUnavailable("This machine is not enrolled.")
+        try:
+            response = self._http.get(
+                self._url("/agent/tasks"),
+                headers=self._credential.headers,
+                timeout=self._timeout,
+            )
+        except requests.RequestException as error:
+            raise TasksUnavailable(
+                f"Could not reach the backend at {self._base}. Is it running?"
+            ) from error
+
+        if response.status_code != 200:
+            raise TasksUnavailable(_detail(response))
+        body = response.json()
+        return body if isinstance(body, list) else []
 
     def _post(self, path: str, payload: dict[str, Any], expect: int) -> UploadResult:
         if self._credential is None:
