@@ -8,6 +8,8 @@
 
 import type { SVGProps } from 'react'
 
+import { Aperture } from './Aperture'
+
 type IconProps = SVGProps<SVGSVGElement> & { size?: number }
 
 function Icon({ size = 20, children, ...props }: IconProps & { children: React.ReactNode }) {
@@ -168,28 +170,9 @@ export const IconLogout = (p: IconProps) => (
 )
 
 /**
- * The FocusGuard mark: a shield (privacy) framing an iris (attention).
- * Filled with the brand gradient; a unique id per instance so several marks on
- * one page do not share a gradient definition.
+ * The FocusGuard mark: the yellow aperture from the brand logo.
+ * `id` is accepted for compatibility with older call sites and ignored.
  */
-export function Logo({ size = 28, id = 'fg-logo' }: { size?: number; id?: string }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-      <defs>
-        <linearGradient id={id} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#7b6cf0" />
-          <stop offset="1" stopColor="#2a78d6" />
-        </linearGradient>
-      </defs>
-      <path d="M16 2.5 5 6.8v8.4c0 6.6 4.6 12.2 11 14.3 6.4-2.1 11-7.7 11-14.3V6.8z" fill={`url(#${id})`} />
-      <path
-        d="M8.8 16S11.6 11 16 11s7.2 5 7.2 5-2.8 5-7.2 5-7.2-5-7.2-5z"
-        fill="none"
-        stroke="#fff"
-        strokeWidth="1.8"
-        strokeLinejoin="round"
-      />
-      <circle cx="16" cy="16" r="2.6" fill="#fff" />
-    </svg>
-  )
+export function Logo({ size = 28 }: { size?: number; id?: string }) {
+  return <Aperture size={size} />
 }

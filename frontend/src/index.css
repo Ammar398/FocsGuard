@@ -1,101 +1,90 @@
 @import 'tailwindcss';
 
 /*
- * Design tokens.
+ * Design tokens - taken from the logo.
  *
- * Defined once, used by role. The data colours carry meaning, so the same blue
- * means "productive / focused" on the ring, the timeline, the bars and the
- * tables, or the dashboard teaches nobody anything.
+ * The brand is the logo: a yellow camera aperture on black. So the interface is
+ * black and one yellow, and nothing else competes with it:
+ *
+ *   Black      #000000  page canvas, exactly the logo's background
+ *   Graphite   #141310  raised surfaces (a warm black that sits under yellow)
+ *   Rule       #2a2823  hairlines and borders
+ *   Aperture   #ffcc00  brand, primary actions, the active state - black text on it
+ *   Bone       #f2efe6  primary text, warm to match the yellow
+ *   Ash        #9a958a  secondary text
+ *
+ * Dark only, by design: the identity is a light mark on black. Print still
+ * switches to a light page (see the print block below).
  *
  * DATA PALETTE - validated, not eyeballed. Productive/high, mid and
- * distracting/low were run through the dataviz skill's validator
- * (scripts/validate_palette.js) against these exact surfaces in both modes:
- * every check passes, worst colour-blind separation dE 10.2. The previous
- * emerald-vs-red pair failed it (dE 4.1 for deuteranopia - about 1 man in 12
- * could not tell "productive" from "distracting"). Blue <-> red is the
- * validated diverging pair; amber sits between them.
- *
- * The brand accent is violet so buttons never read as data.
+ * distracting/low were run through the dataviz skill's validator against the
+ * Graphite surface: every check passes, worst colour-blind separation dE 10.2.
+ * Blue <-> red is the validated diverging pair; amber sits between them. Data
+ * colours are never used for text or for actions, and the brand yellow is
+ * never used for data, so a yellow thing is always something you can press.
  */
 @theme {
-  --color-ink: #0f172a;
-  --color-ink-soft: #334155;
-  --color-muted: #64748b;
-  --color-surface: #ffffff;
-  --color-canvas: #f5f6fa;
-  --color-line: #e4e7ee;
-  --color-grid: #eceef3;
+  --font-sans: 'Archivo Variable', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
 
-  --color-focus-high: #2a78d6;
+  --color-ink: #f2efe6;
+  --color-ink-soft: #d6d2c6;
+  --color-muted: #9a958a;
+  --color-surface: #141310;
+  --color-raised: #1c1b17;
+  --color-canvas: #000000;
+  --color-line: #2a2823;
+  --color-grid: #23211d;
+
+  --color-focus-high: #3987e5;
   --color-focus-mid: #c98500;
   --color-focus-low: #d03b3b;
-  --color-neutral-data: #9aa1ad;
+  --color-neutral-data: #7c7a73;
 
-  --color-accent: #6250d6;
-  --color-accent-soft: #efedfc;
-  --color-good: #0b8a0b;
+  --color-accent: #ffcc00;
+  --color-on-accent: #0b0a08;
+  --color-accent-soft: #2a2410;
+  --color-good: #ffcc00;
 
-  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 4px 16px -6px rgb(15 23 42 / 0.08);
-  --shadow-lift: 0 2px 4px rgb(15 23 42 / 0.05), 0 16px 32px -12px rgb(15 23 42 / 0.18);
+  --shadow-card: 0 0 0 1px rgb(255 255 255 / 0.02);
+  --shadow-lift: 0 24px 48px -24px rgb(0 0 0 / 0.9);
 }
 
 :root {
-  color-scheme: light dark;
-  --brand-gradient: linear-gradient(135deg, #6250d6 0%, #2a78d6 100%);
-}
-
-/*
- * Dark palette. Plain custom properties on :root, NOT a nested @theme: Tailwind
- * 4 hoists every @theme block to the top level regardless of the media query
- * around it, which made the app dark for everyone. Unlayered :root wins over
- * the theme layer, so this applies only when the system prefers dark.
- */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-ink: #e7eaf0;
-    --color-ink-soft: #c8cfdb;
-    --color-muted: #94a3b8;
-    --color-surface: #1e293b;
-    --color-canvas: #111827;
-    --color-line: #2f3b50;
-    --color-grid: #283448;
-
-    --color-focus-high: #3987e5;
-    --color-focus-mid: #c98500;
-    --color-focus-low: #d03b3b;
-    --color-neutral-data: #7c8596;
-
-    --color-accent: #9085e9;
-    --color-accent-soft: #2a2752;
-    --color-good: #0ca30c;
-
-    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -12px rgb(0 0 0 / 0.5);
-    --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.3), 0 20px 40px -16px rgb(0 0 0 / 0.6);
-    --brand-gradient: linear-gradient(135deg, #7b6cf0 0%, #3987e5 100%);
-  }
+  color-scheme: dark;
+  /* Kept as a variable name for compatibility: it is now the flat brand
+     yellow. The decorative gradient is gone (frontend-design: gradient washes
+     are a template tell). */
+  --brand-gradient: #ffcc00;
 }
 
 body {
   margin: 0;
   background: var(--color-canvas);
-  background-image: radial-gradient(
-    1200px 400px at 50% -120px,
-    color-mix(in srgb, var(--color-accent) 9%, transparent),
-    transparent 70%
-  );
-  background-repeat: no-repeat;
   color: var(--color-ink);
-  font-family:
-    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial,
-    sans-serif;
+  font-family: var(--font-sans);
+  font-optical-sizing: auto;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Headings use the family's wider cut: one typeface, two voices. */
+h1,
+h2 {
+  font-stretch: 112%;
+  letter-spacing: -0.015em;
+}
+
+::selection {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
 }
 
 /* Recharts draws its own focus outlines; these keep keyboard focus visible
    everywhere else without the default browser ring fighting the palette. */
 :focus-visible {
   outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
+  outline-offset: 3px;
+  border-radius: 6px;
 }
 
 /*
@@ -186,7 +175,8 @@ body {
     --color-line: #cbd5e1;
     --color-grid: #e2e8f0;
     --color-focus-high: #2a78d6;
-    --color-accent: #6250d6;
+    --color-accent: #8a6d00;
+    --color-raised: #f4f4f4;
     --shadow-card: none;
     background: #ffffff;
     background-image: none;
@@ -202,24 +192,49 @@ body {
   }
 }
 
-/* Entrance animation for cards and panels. Respecting reduced motion. */
-@keyframes fg-rise {
+/*
+ * The one orchestrated moment: the aperture opens when a score first appears.
+ * Cards and sections no longer fade in one by one (frontend-design: scattered
+ * entrance effects read as a template); `.fg-rise` is kept as a no-op so the
+ * markup that still carries it changes nothing.
+ */
+.fg-rise {
+  animation: none;
+}
+
+@keyframes fg-aperture-blades {
   from {
-    opacity: 0;
-    transform: translateY(6px);
+    transform: rotate(-70deg) scale(0.92);
   }
   to {
-    opacity: 1;
     transform: none;
   }
 }
 
-.fg-rise {
-  animation: fg-rise 360ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+@keyframes fg-aperture-pupil {
+  from {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.fg-aperture-open .fg-aperture-blades {
+  transform-origin: 50px 50px;
+  animation: fg-aperture-blades 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.fg-aperture-open .fg-aperture-pupil {
+  transform-origin: 50px 50px;
+  animation: fg-aperture-pupil 700ms 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fg-rise {
+  .fg-aperture-open .fg-aperture-blades,
+  .fg-aperture-open .fg-aperture-pupil {
     animation: none;
   }
 }

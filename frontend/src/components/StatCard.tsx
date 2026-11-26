@@ -16,21 +16,18 @@ interface StatCardProps {
  */
 export function StatCard({ label, value, hint, accent, icon }: StatCardProps) {
   return (
-    <div className="fg-rise rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-card)]">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-medium text-[var(--color-muted)]">{label}</p>
-        {icon && (
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
-            {icon}
-          </span>
+    <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] p-4">
+      <p className="flex items-center gap-2 text-sm text-[var(--color-muted)]">
+        {/* Meaning colour sits on a small mark beside the label; the value stays
+            in ink (dataviz: text wears text tokens). Icons are quiet. */}
+        {accent ? (
+          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: accent }} aria-hidden="true" />
+        ) : (
+          icon && <span className="text-[var(--color-muted)] [&>svg]:h-4 [&>svg]:w-4">{icon}</span>
         )}
-      </div>
-      <p
-        className="mt-2 text-[1.65rem] leading-tight font-semibold tracking-tight"
-        style={accent ? { color: accent } : undefined}
-      >
-        {value}
+        {label}
       </p>
+      <p className="mt-2 text-[1.65rem] leading-tight font-semibold [font-stretch:108%]">{value}</p>
       {hint !== undefined && (
         <p className="mt-1 text-xs text-[var(--color-muted)]">{hint}</p>
       )}
@@ -55,11 +52,7 @@ export function Card({
     <section className="fg-rise rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-card)] sm:p-6">
       <header className="mb-4 flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
-          {icon && (
-            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
-              {icon}
-            </span>
-          )}
+          {icon && <span className="mt-0.5 text-[var(--color-accent)]">{icon}</span>}
           <div>
             <h2 className="text-base font-semibold tracking-tight">{title}</h2>
             {subtitle && <p className="mt-0.5 text-sm text-[var(--color-muted)]">{subtitle}</p>}

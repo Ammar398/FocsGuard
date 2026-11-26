@@ -27,7 +27,7 @@ import type { SessionSummary } from '../api/types'
 import { Card, StatCard } from '../components/StatCard'
 import { FocusRing } from '../components/FocusRing'
 import { ThisComputer } from '../components/ThisComputer'
-import { IconAlert, IconArrowRight, IconClock, IconTarget } from '../components/icons'
+import { IconAlert, IconClock, IconTarget } from '../components/icons'
 import { useAuth } from '../auth/context'
 import {
   formatDate,
@@ -131,7 +131,7 @@ function CurrentSession({ session, live }: { session: SessionSummary; live: bool
             <h1 className="mt-1 text-xl font-semibold tracking-tight">{session.name}</h1>
           </div>
           <p className="mt-1 text-sm text-[var(--color-muted)]">
-            {session.task_name !== null && <>Working on {session.task_name} · </>}
+            {session.task_name !== null && <>Working on {session.task_name}. </>}
             Started {formatDate(session.started_at)}
           </p>
         </div>
@@ -140,7 +140,7 @@ function CurrentSession({ session, live }: { session: SessionSummary; live: bool
           to={`/sessions/${session.id}`}
           className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-line)] px-3.5 py-1.5 text-sm font-medium transition hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
         >
-          See the timeline <IconArrowRight size={16} />
+          See the timeline
         </Link>
       </header>
 
@@ -204,17 +204,14 @@ function SessionRow({ session }: { session: SessionSummary }) {
         <span className="min-w-0 flex-1">
           <span className="block truncate font-medium">{session.name}</span>
           <span className="block text-xs text-[var(--color-muted)]">
-            {formatDate(session.started_at)} · {formatDuration(session.duration_seconds)}
-            {isRunning(session) && ' · running'}
+            {formatDate(session.started_at)}, {formatDuration(session.duration_seconds)}
+            {isRunning(session) && ', running'}
           </span>
         </span>
 
         <span
           className="flex h-10 w-12 shrink-0 items-center justify-center rounded-xl text-base font-semibold"
-          style={{
-            color: scoreColor(session.average_focus_score),
-            backgroundColor: `color-mix(in srgb, ${scoreColor(session.average_focus_score)} 12%, transparent)`,
-          }}
+          style={{ backgroundColor: 'var(--color-raised)' }}
           title="Average focus score"
         >
           {Math.round(session.average_focus_score)}

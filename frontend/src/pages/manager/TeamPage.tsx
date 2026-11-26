@@ -99,8 +99,8 @@ export function TeamPage() {
                 <span className={item.is_active ? '' : 'opacity-50'}>
                   <span className="font-medium">{item.name}</span>
                   <span className="block text-xs text-[var(--color-muted)]">
-                    {item.open_tasks} open · {item.completed_tasks} completed
-                    {item.description ? ` · ${item.description}` : ''}
+                    {item.open_tasks} open, {item.completed_tasks} completed
+                    {item.description ? `. ${item.description}` : ''}
                   </span>
                 </span>
                 <Button

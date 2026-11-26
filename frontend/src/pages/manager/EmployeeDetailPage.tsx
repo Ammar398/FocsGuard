@@ -308,7 +308,7 @@ function DevicesCard({ data, onChange }: { data: EmployeeDetail; onChange: () =>
                 {device.revoked
                   ? 'revoked'
                   : device.enrolled
-                    ? `${device.platform ?? ''} · agent ${device.agent_version ?? '?'}`
+                    ? `${device.platform ?? ''}, agent ${device.agent_version ?? '?'}`
                     : 'waiting for enrolment'}
               </span>
             </span>
@@ -353,7 +353,7 @@ function DevicesCard({ data, onChange }: { data: EmployeeDetail; onChange: () =>
         </div>
       )}
 
-      <h3 className="mt-5 text-xs font-medium tracking-wide text-[var(--color-muted)] uppercase">
+      <h3 className="mt-5 text-xs font-medium text-[var(--color-muted)]">
         Consent records
       </h3>
       {data.consents.length === 0 ? (
@@ -363,7 +363,7 @@ function DevicesCard({ data, onChange }: { data: EmployeeDetail; onChange: () =>
           {data.consents.map((consent) => (
             <li key={`${consent.consent_version}-${consent.granted_at}`}>
               Notice {consent.consent_version} accepted {formatDate(consent.granted_at)}
-              {consent.revoked_at && ` · withdrawn ${formatDate(consent.revoked_at)}`}
+              {consent.revoked_at && `, withdrawn ${formatDate(consent.revoked_at)}`}
             </li>
           ))}
         </ul>

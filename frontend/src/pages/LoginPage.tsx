@@ -26,7 +26,8 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 
 import { ApiError, api } from '../api/client'
 import { useAuth } from '../auth/context'
-import { IconChart, IconEye, IconLock, IconShield, Logo } from '../components/icons'
+import { Aperture } from '../components/Aperture'
+import { IconChart, IconEye, IconShield, Logo } from '../components/icons'
 
 type Mode = 'signin' | 'register' | 'organisation' | 'verify' | 'forgot' | 'reset'
 
@@ -260,7 +261,7 @@ export function LoginPage() {
             <button
               type="submit"
               disabled={busy || (needsCode && code.replace(/\D/g, '').length !== 6)}
-              className="w-full rounded-xl px-4 py-2.5 font-medium text-white shadow-[var(--shadow-card)] transition hover:brightness-110 disabled:opacity-50"
+              className="w-full rounded-xl px-4 py-2.5 font-semibold text-[var(--color-on-accent)] shadow-[var(--shadow-card)] transition hover:brightness-110 disabled:opacity-50"
               style={{ background: 'var(--brand-gradient)' }}
             >
               {busy ? 'Please wait…' : heading.submit}
@@ -334,67 +335,44 @@ function CodeInput({ value, onChange }: { value: string; onChange: (value: strin
 
 function BrandPanel() {
   return (
-    <aside
-      className="relative hidden overflow-hidden p-12 text-white lg:flex lg:flex-col lg:justify-between"
-      style={{ background: 'var(--brand-gradient)' }}
-    >
-      {/* Soft light shapes; decoration only. */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -top-24 -right-24 h-96 w-96 rounded-full bg-white/10 blur-2xl"
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -bottom-32 -left-20 h-[28rem] w-[28rem] rounded-full bg-white/10 blur-3xl"
-      />
-
-      <div className="relative flex items-center gap-3">
-        <span className="rounded-xl bg-white/15 p-1.5 backdrop-blur">
-          <Logo size={30} id="fg-logo-panel" />
-        </span>
-        <span className="text-xl font-semibold tracking-tight">FocusGuard</span>
+    <aside className="relative hidden overflow-hidden border-r border-[var(--color-line)] bg-[var(--color-canvas)] p-12 lg:flex lg:flex-col lg:justify-between">
+      <div className="flex items-center gap-3">
+        <Logo size={34} />
+        <span className="text-xl font-semibold [font-stretch:112%]">FocusGuard</span>
       </div>
 
-      <div className="relative max-w-md">
-        <h2 className="text-4xl leading-tight font-semibold tracking-tight">
-          Understand your focus. Keep your privacy.
-        </h2>
-        <p className="mt-4 text-white/80">
-          AI attention analysis that runs on your own computer, paired with honest, explainable
-          reports - for students improving their study habits and teams understanding their work.
-        </p>
-
-        <ul className="mt-10 space-y-5">
-          <Feature icon={<IconEye />} title="On-device vision">
-            Webcam analysis happens on your computer. Frames never leave it.
-          </Feature>
-          <Feature icon={<IconChart />} title="Explainable insights">
-            Every score and suggestion shows the data behind it.
-          </Feature>
-          <Feature icon={<IconShield />} title="You stay in control">
-            Nothing starts without your approval on your own computer.
-          </Feature>
-        </ul>
+      <div className="flex items-center gap-12">
+        <Aperture size={220} score={78} animate label="The FocusGuard aperture" />
+        <div className="max-w-sm">
+          <h2 className="text-4xl leading-[1.08] font-[750]">See your focus. Keep your privacy.</h2>
+          <p className="mt-5 text-[var(--color-ink-soft)]">
+            Attention analysis that runs on your own computer, with reports that show the data
+            behind every number.
+          </p>
+        </div>
       </div>
 
-      <p className="relative flex items-center gap-2 text-sm text-white/70">
-        <IconLock size={16} />
-        No screenshots, no keystrokes, no webcam images - ever.
-      </p>
+      <ul className="grid grid-cols-3 gap-8 border-t border-[var(--color-line)] pt-8">
+        <Feature icon={<IconEye />} title="On your computer">
+          Webcam frames never leave it.
+        </Feature>
+        <Feature icon={<IconChart />} title="Explained">
+          Every score shows its data.
+        </Feature>
+        <Feature icon={<IconShield />} title="Your approval">
+          Nothing starts until you say yes.
+        </Feature>
+      </ul>
     </aside>
   )
 }
 
 function Feature({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
   return (
-    <li className="flex gap-4">
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15 backdrop-blur">
-        {icon}
-      </span>
-      <span>
-        <span className="block font-medium">{title}</span>
-        <span className="block text-sm text-white/75">{children}</span>
-      </span>
+    <li>
+      <span className="text-[var(--color-accent)]">{icon}</span>
+      <span className="mt-3 block font-semibold">{title}</span>
+      <span className="mt-1 block text-sm text-[var(--color-muted)]">{children}</span>
     </li>
   )
 }

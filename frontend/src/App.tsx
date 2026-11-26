@@ -156,7 +156,7 @@ function TopBar() {
     <header className="no-print sticky top-0 z-20 border-b border-[var(--color-line)] bg-[var(--color-surface)]/80 backdrop-blur-md">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
         <Link to="/" className="order-1 flex items-center gap-2.5">
-          <Logo size={30} id="fg-logo-top" />
+          <Logo size={30} />
           <span className="text-[1.05rem] font-semibold tracking-tight">FocusGuard</span>
         </Link>
 
@@ -185,7 +185,7 @@ function TopBar() {
         <div className="order-2 flex items-center gap-3 text-sm sm:order-3">
           <div className="hidden items-center gap-2.5 md:flex">
             <span
-              className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white"
+              className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-[var(--color-on-accent)]"
               style={{ background: 'var(--brand-gradient)' }}
               aria-hidden="true"
             >

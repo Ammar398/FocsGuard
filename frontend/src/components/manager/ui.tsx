@@ -30,7 +30,7 @@ export function WindowToggle({
           aria-pressed={days === option.days}
           className={`rounded-full px-3.5 py-1 text-sm font-medium transition ${
             days === option.days
-              ? 'text-white'
+              ? 'text-[var(--color-on-accent)]'
               : 'text-[var(--color-muted)] hover:text-[var(--color-ink)]'
           }`}
           style={days === option.days ? { background: 'var(--brand-gradient)' } : undefined}
@@ -199,7 +199,7 @@ export function Button({
   disabled?: boolean
 }) {
   const styles = {
-    primary: 'text-white shadow-[var(--shadow-card)] hover:brightness-110',
+    primary: 'font-semibold text-[var(--color-on-accent)] shadow-[var(--shadow-card)] hover:brightness-110',
     secondary:
       'border border-[var(--color-line)] bg-[var(--color-surface)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]',
     danger:

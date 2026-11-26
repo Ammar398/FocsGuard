@@ -61,7 +61,7 @@ export function ReportsPage() {
               aria-pressed={days === option.days}
               className={
                 days === option.days
-                  ? 'rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-white'
+                  ? 'rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-semibold text-[var(--color-on-accent)]'
                   : 'rounded-md px-3 py-1.5 text-sm font-medium hover:opacity-70'
               }
             >
@@ -87,7 +87,7 @@ export function ReportsPage() {
       )}
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold tracking-wide text-[var(--color-muted)] uppercase">
+        <h2 className="mb-3 text-sm font-semibold text-[var(--color-ink-soft)]">
           Suggestions
         </h2>
         {advice.data === null ? (

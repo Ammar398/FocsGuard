@@ -25,6 +25,7 @@ import {
   type HelperStatus,
 } from '../api/helper'
 import { useAuth } from '../auth/context'
+import { Aperture } from './Aperture'
 import { formatDate } from '../lib/format'
 import {
   IconCamera,
@@ -113,12 +114,7 @@ export function ThisComputer({ onSessionChange }: { onSessionChange?: () => void
     <section className="fg-rise overflow-hidden rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-line)] px-5 py-4 sm:px-6">
         <div className="flex items-center gap-3">
-          <span
-            className="flex h-9 w-9 items-center justify-center rounded-xl text-white"
-            style={{ background: 'var(--brand-gradient)' }}
-          >
-            <IconMonitor size={18} />
-          </span>
+          <Aperture size={34} score={running ? 90 : undefined} />
           <div>
             <h2 className="font-semibold tracking-tight">This computer</h2>
             <p className="text-xs text-[var(--color-muted)]">
@@ -290,7 +286,7 @@ function Stepper({ steps }: { steps: StepState[] }) {
               state === 'done'
                 ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]'
                 : state === 'current'
-                  ? 'text-white'
+                  ? 'text-[var(--color-on-accent)]'
                   : 'bg-[var(--color-canvas)] text-[var(--color-muted)]'
             }`}
             style={state === 'current' ? { background: 'var(--brand-gradient)' } : undefined}
@@ -368,39 +364,30 @@ function CameraLine({
 
 function LiveSession({ name, busy, run }: { name: string | null; busy: Busy; run: Run }) {
   return (
-    <div
-      className="relative overflow-hidden rounded-2xl p-5 text-white"
-      style={{ background: 'var(--brand-gradient)' }}
-    >
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -top-16 -right-10 h-48 w-48 rounded-full bg-white/10 blur-2xl"
-      />
-      <div className="relative flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <p className="flex items-center gap-2 text-sm text-white/80">
-            <Pulse light /> Monitoring now
-          </p>
-          <p className="mt-1 text-xl font-semibold tracking-tight">{name}</p>
-          <p className="mt-1 text-xs text-white/75">
-            The FocusGuard window on your computer shows exactly what is being measured.
-          </p>
-        </div>
-        <button
-          type="button"
-          disabled={busy !== null}
-          onClick={() =>
-            void run('stopping', async () => {
-              await localHelper.stop()
-              return 'Stopping - the session uploads and appears below in a moment.'
-            })
-          }
-          className="flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[var(--color-focus-low)] shadow-[var(--shadow-card)] transition hover:bg-white/90 disabled:opacity-60"
-        >
-          <IconStop size={18} />
-          {busy === 'stopping' ? 'Stopping…' : 'Stop session'}
-        </button>
+    <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[var(--color-accent)]/50 bg-[var(--color-accent-soft)] p-5">
+      <div>
+        <p className="flex items-center gap-2 text-sm text-[var(--color-ink-soft)]">
+          <Pulse /> Monitoring now
+        </p>
+        <p className="mt-1 text-xl font-semibold [font-stretch:112%]">{name}</p>
+        <p className="mt-1 text-xs text-[var(--color-muted)]">
+          The FocusGuard window on your computer shows exactly what is being measured.
+        </p>
       </div>
+      <button
+        type="button"
+        disabled={busy !== null}
+        onClick={() =>
+          void run('stopping', async () => {
+            await localHelper.stop()
+            return 'Stopping. The session uploads and appears below in a moment.'
+          })
+        }
+        className="flex items-center gap-2 rounded-xl border border-[var(--color-ink)]/30 px-4 py-2.5 text-sm font-semibold transition hover:border-[var(--color-ink)] disabled:opacity-60"
+      >
+        <IconStop size={18} />
+        {busy === 'stopping' ? 'Stopping' : 'Stop session'}
+      </button>
     </div>
   )
 }
@@ -499,8 +486,8 @@ function AssignedTasks({ busy, run }: { busy: Busy; run: Run }) {
               <p className="font-medium">{task.title}</p>
               <p className="text-xs text-[var(--color-muted)]">
                 {task.category.toLowerCase()}
-                {task.project_name ? ` · ${task.project_name}` : ''}
-                {task.expected_minutes ? ` · about ${task.expected_minutes} min` : ''}
+                {task.project_name ? `, ${task.project_name}` : ''}
+                {task.expected_minutes ? `, about ${task.expected_minutes} min` : ''}
               </p>
               {(task.productive_rules.length > 0 || task.distracting_rules.length > 0) && (
                 <p className="mt-1 text-xs text-[var(--color-muted)]">
@@ -616,7 +603,7 @@ function PrimaryButton({
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium whitespace-nowrap text-white shadow-[var(--shadow-card)] transition hover:brightness-110 disabled:opacity-60"
+      className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold whitespace-nowrap text-[var(--color-on-accent)] shadow-[var(--shadow-card)] transition hover:brightness-110 disabled:opacity-60"
       style={{ background: 'var(--brand-gradient)' }}
     >
       {icon}

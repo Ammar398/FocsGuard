@@ -221,7 +221,7 @@ export function TaskDetailPage() {
                 <li key={type} className="flex justify-between gap-4">
                   <span>{eventLabel(type)}</span>
                   <span className="tabular-nums text-[var(--color-muted)]">
-                    {formatDuration(seconds)} · ×{data.event_counts[type] ?? 0}
+                    {formatDuration(seconds)}, {data.event_counts[type] ?? 0} times
                   </span>
                 </li>
               ))}

@@ -99,8 +99,8 @@ export function TasksPage() {
                         {task.title}
                       </Link>
                       <div className="text-xs text-[var(--color-muted)]">
-                        {categoryLabel(task.category)} · {task.priority.toLowerCase()}
-                        {task.project_name ? ` · ${task.project_name}` : ''}
+                        {categoryLabel(task.category)}, {task.priority.toLowerCase()} priority
+                        {task.project_name ? `, ${task.project_name}` : ''}
                       </div>
                     </td>
                     <td data-label="Assignee" className={tdClass}>{task.assignee_name ?? '—'}</td>
@@ -261,7 +261,7 @@ function CreateTask() {
         </div>
 
         <aside className="rounded-lg border border-[var(--color-line)] p-4">
-          <h3 className="text-xs font-medium tracking-wide text-[var(--color-muted)] uppercase">
+          <h3 className="text-xs font-medium text-[var(--color-muted)]">
             Suggested assignees
           </h3>
           {!category ? (
@@ -341,7 +341,7 @@ function SuggestionList({
                   {candidate.name}
                 </button>{' '}
                 <span className="text-[var(--color-muted)]">
-                  · {candidate.completed_tasks} completed · {candidate.open_tasks} open
+                  , {candidate.completed_tasks} completed, {candidate.open_tasks} open
                 </span>
               </li>
             ))}

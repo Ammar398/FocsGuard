@@ -102,7 +102,7 @@ export function ActivityBreakdown({ events }: { events: ActivityEvent[] }) {
           </div>
 
           <p className="mt-1 text-xs text-[var(--color-muted)]">
-            {row.classification.toLowerCase()} · from {ruleSourceLabel(row.ruleSource)}
+            {row.classification.toLowerCase()}, by {ruleSourceLabel(row.ruleSource)}
           </p>
         </li>
       ))}

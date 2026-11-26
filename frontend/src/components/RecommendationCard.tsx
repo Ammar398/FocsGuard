@@ -52,7 +52,7 @@ export function RecommendationCard({ item }: { item: RecommendationItem }) {
 
       {/* Always visible. See the note above about tooltips. */}
       <div className="border-t border-[var(--color-line)] bg-[var(--color-canvas)] px-4 py-3">
-        <p className="mb-2 text-xs font-medium tracking-wide text-[var(--color-muted)] uppercase">
+        <p className="mb-2 text-xs font-medium text-[var(--color-muted)]">
           Why you are seeing this
         </p>
         <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2">

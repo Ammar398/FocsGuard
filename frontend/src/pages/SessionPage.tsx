@@ -62,8 +62,8 @@ export function SessionPage() {
         <p className="mt-1 text-sm text-[var(--color-muted)]">
           {formatDate(data.started_at)}
           {data.ended_at !== null && <> to {formatClock(data.ended_at)}</>}
-          {data.task_name !== null && <> · {data.task_name}</>}
-          {running && <> · still running</>}
+          {data.task_name !== null && <>, {data.task_name}</>}
+          {running && <>, still running</>}
         </p>
       </div>
 

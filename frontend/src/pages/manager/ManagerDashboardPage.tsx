@@ -23,6 +23,7 @@ import {
 
 import { api } from '../../api/client'
 import type { ManagerDashboard } from '../../api/managerTypes'
+import { Aperture } from '../../components/Aperture'
 import { Card, StatCard } from '../../components/StatCard'
 import {
   IconAlert,
@@ -30,7 +31,6 @@ import {
   IconChart,
   IconCheck,
   IconPhone,
-  IconTarget,
   IconTasks,
   IconUsers,
 } from '../../components/icons'
@@ -85,41 +85,40 @@ export function ManagerDashboardPage() {
       <ErrorBanner message={error} />
 
       <div className="grid gap-4 lg:grid-cols-[1.1fr_2fr]">
-        {/* The one hero figure on this view (dataviz skill): the team's focus. */}
-        <section
-          className="fg-rise relative overflow-hidden rounded-2xl p-6 text-white shadow-[var(--shadow-lift)]"
-          style={{ background: 'var(--brand-gradient)' }}
-        >
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute -top-20 -right-16 h-56 w-56 rounded-full bg-white/10 blur-2xl"
+        {/* The one hero on this view: the team's focus, as the aperture. */}
+        <section className="flex items-center gap-6 rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] p-6">
+          <Aperture
+            size={132}
+            score={totals.average_focus_score}
+            animate
+            label="Team average focus"
           />
-          <p className="relative flex items-center gap-2 text-sm text-white/80">
-            <IconTarget size={16} /> Team average focus
-          </p>
-          <p className="relative mt-3 text-6xl leading-none font-semibold tracking-tight">
-            {totals.average_focus_score === null ? '-' : Math.round(totals.average_focus_score)}
-          </p>
-          <p className="relative mt-3 text-sm text-white/80">
-            across {formatDuration(totals.monitored_seconds)} of monitored work, {windowLabel}
-          </p>
-          <div className="relative mt-6 grid grid-cols-2 gap-3 text-sm">
-            <div className="rounded-xl bg-white/12 p-3 backdrop-blur">
-              <p className="text-white/75">Visual attention</p>
-              <p className="mt-0.5 text-lg font-semibold">
-                {totals.visual_attention_score === null
-                  ? '-'
-                  : Math.round(totals.visual_attention_score)}
-              </p>
-            </div>
-            <div className="rounded-xl bg-white/12 p-3 backdrop-blur">
-              <p className="text-white/75">Digital productivity</p>
-              <p className="mt-0.5 text-lg font-semibold">
-                {totals.digital_productivity_score === null
-                  ? '-'
-                  : Math.round(totals.digital_productivity_score)}
-              </p>
-            </div>
+          <div>
+            <p className="text-sm text-[var(--color-muted)]">Team average focus</p>
+            <p className="mt-1 text-6xl leading-none font-[750] [font-stretch:112%]">
+              {totals.average_focus_score === null ? '-' : Math.round(totals.average_focus_score)}
+            </p>
+            <p className="mt-3 text-sm text-[var(--color-muted)]">
+              over {formatDuration(totals.monitored_seconds)} of monitored work, {windowLabel}
+            </p>
+            <dl className="mt-4 flex gap-6 text-sm">
+              <div>
+                <dt className="text-[var(--color-muted)]">Visual attention</dt>
+                <dd className="mt-0.5 text-lg font-semibold">
+                  {totals.visual_attention_score === null
+                    ? '-'
+                    : Math.round(totals.visual_attention_score)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-[var(--color-muted)]">Digital productivity</dt>
+                <dd className="mt-0.5 text-lg font-semibold">
+                  {totals.digital_productivity_score === null
+                    ? '-'
+                    : Math.round(totals.digital_productivity_score)}
+                </dd>
+              </div>
+            </dl>
           </div>
         </section>
 
@@ -138,7 +137,7 @@ export function ManagerDashboardPage() {
           <StatCard
             label="Active tasks"
             value={data.active_tasks}
-            hint={`${data.open_tasks} open · ${data.completed_tasks_in_window} completed`}
+            hint={`${data.open_tasks} open, ${data.completed_tasks_in_window} completed`}
             icon={<IconTasks size={16} />}
           />
           <StatCard

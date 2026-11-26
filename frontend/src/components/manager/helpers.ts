@@ -23,5 +23,5 @@ export function percent(value: number | null | undefined): string {
 
 export const tableClass = 'w-full text-left text-sm'
 export const thClass =
-  'border-b border-[var(--color-line)] pb-2 text-xs font-medium tracking-wide text-[var(--color-muted)] uppercase'
+  'border-b border-[var(--color-line)] pb-2 text-xs font-medium text-[var(--color-muted)]'
 export const tdClass = 'border-b border-[var(--color-line)] py-2.5 pr-3 align-top'
