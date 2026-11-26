@@ -109,6 +109,7 @@ class BackendClient:
         platform: str | None = None,
         agent_version: str | None = None,
         consent_version: str | None = None,
+        replace_device_secret: str | None = None,
     ) -> DeviceCredential:
         """Exchange a one-time enrolment token for a lasting credential.
 
@@ -125,6 +126,7 @@ class BackendClient:
                     "platform": platform,
                     "agent_version": agent_version,
                     "consent_version": consent_version,
+                    "replace_device_secret": replace_device_secret,
                 },
                 timeout=self._timeout,
             )

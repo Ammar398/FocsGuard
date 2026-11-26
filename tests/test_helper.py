@@ -200,7 +200,7 @@ def test_starting_a_session_asks_and_launches_with_an_argument_list(world) -> No
     assert status == 200
     assert "webcam" in world["asked"][0][1]
     assert world["launched"] == [
-        ["--name", hostile.strip(), "--task", "Trees", "--task-category", "STUDY"]
+        ["--name", hostile.strip(), "--task", "Trees", "--task-category", "STUDY", "--preview"]
     ]
 
 
@@ -211,7 +211,9 @@ def test_distracting_sites_are_passed_but_never_as_flags(world) -> None:
         {"name": "Study", "task": "Study", "task_category": "STUDY",
          "distracting": ["YouTube.com", "--seconds", "instagram.com", "youtube.com"]},
     )
-    assert world["launched"][0][-3:] == ["--distracting", "youtube.com", "instagram.com"]
+    assert world["launched"][0][-4:] == [
+        "--distracting", "youtube.com", "instagram.com", "--preview"
+    ]
 
 
 def test_a_declined_start_launches_nothing(world) -> None:
@@ -238,7 +240,9 @@ def test_an_assigned_task_must_be_one_of_mine(world) -> None:
     world["answers"].append(True)
     status, body, _ = call(world, "POST", "/sessions/start", {"assigned_task_id": 12})
     assert status == 200 and body["name"] == "Build REST API"
-    assert world["launched"][0] == ["--name", "Build REST API", "--assigned-task", "12"]
+    assert world["launched"][0] == [
+        "--name", "Build REST API", "--assigned-task", "12", "--preview"
+    ]
 
 
 def test_only_one_session_at_a_time_and_stop_asks_the_agent(world, monkeypatch) -> None:
@@ -270,7 +274,7 @@ def test_the_camera_check_asks_then_opens_a_preview_with_calibration(world) -> N
 
     assert status == 200
     assert "Nothing is recorded or uploaded" in world["asked"][0][1]
-    assert world["cameras"][0].arguments == ["--show", "--wait-on-exit"]
+    assert world["cameras"][0].arguments == ["--show", "--keep-open", "--wait-on-exit"]
     camera = call(world, "GET", "/status")[1]["camera"]
     assert camera["check_running"] is True and camera["calibrated"] is False
 
@@ -297,3 +301,10 @@ def test_a_declined_camera_check_opens_nothing(world) -> None:
 def test_the_camera_check_is_refused_from_another_website(world) -> None:
     status, _, _ = call(world, "POST", "/camera/check", {}, origin="https://evil.example")
     assert status == 403 and world["asked"] == []
+
+
+def test_sessions_open_the_live_analysis_window(world) -> None:
+    """The session lasts as long as its analysis window is open."""
+    world["answers"].append(True)
+    call(world, "POST", "/sessions/start", {"name": "Study"})
+    assert world["launched"][0][-1] == "--preview"

@@ -34,6 +34,7 @@ an audit that cannot say *when* access ended is not an audit.
 
 from __future__ import annotations
 
+import secrets
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -163,18 +164,38 @@ def enroll(payload: EnrollDeviceRequest, db: Session = Depends(get_db)) -> Devic
     if expires_at is None or expires_at <= datetime.now(UTC):
         raise invalid
 
-    # Reject a uuid already claimed by a different device rather than letting two
-    # installations overwrite each other's identity.
+    # The same computer may already be connected - to someone else's account,
+    # or an earlier one of yours. Moving it is allowed only with proof that the
+    # request comes from that computer: its current device secret, which never
+    # leaves it. A uuid on its own is not proof (it sits in a plain file), so
+    # without the secret two installations still cannot take over each other.
     clash = db.scalar(
         select(Device).where(
             Device.device_uuid == payload.device_uuid, Device.id != device.id
         )
     )
     if clash is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="That device identifier is already enrolled.",
+        proof = payload.replace_device_secret
+        proven = bool(
+            proof
+            and clash.secret_hash
+            and secrets.compare_digest(clash.secret_hash, hash_token(proof))
         )
+        if clash.revoked_at is None and not proven:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This computer is already connected to another FocusGuard account. "
+                "Connect it again from this computer's FocusGuard Helper to move it.",
+            )
+        # Retire the old link: its uploaded history stays (it is real), but the
+        # credential is destroyed so the old account stops receiving uploads.
+        clash.device_uuid = f"{clash.device_uuid}-moved-{clash.id}"[:64]
+        clash.revoked_at = clash.revoked_at or datetime.now(UTC)
+        clash.is_active = False
+        clash.secret_hash = None
+        db.flush()
+        logger.info("Device %d moved to a new enrolment (old record %d retired)",
+                    device.id, clash.id)
 
     secret = generate_device_secret()
 

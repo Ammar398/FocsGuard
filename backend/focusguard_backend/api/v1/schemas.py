@@ -296,6 +296,11 @@ class EnrollDeviceRequest(_Upload):
     #: employee - and an auditor - can see what was agreed to and when.
     consent_version: str | None = Field(default=None, max_length=20)
 
+    #: The computer's current device secret, when it is already connected and
+    #: is being moved to a different account. Proves the request comes from
+    #: the machine itself; see devices.enroll.
+    replace_device_secret: str | None = Field(default=None, max_length=200)
+
 
 class DeviceCredentialOut(BaseModel):
     """The long-lived credential an enrolled agent stores locally.

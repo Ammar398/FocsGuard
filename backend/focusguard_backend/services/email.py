@@ -177,3 +177,27 @@ def code_email(to: str, code: str, purpose: str, minutes: int) -> OutgoingEmail:
   </table>
 </body></html>"""
     return OutgoingEmail(to=to, subject=subject, text=text, html=html)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Send a test message: python -m focusguard_backend.services.email you@example.com"""
+    import sys
+
+    args = sys.argv[1:] if argv is None else argv
+    if len(args) != 1:
+        print("Usage: python -m focusguard_backend.services.email you@example.com")
+        return 2
+    mailer = get_mailer()
+    kind = "SMTP" if isinstance(mailer, SmtpMailer) else "the dev outbox (no SMTP configured)"
+    try:
+        mailer.send(code_email(args[0], "123456", "VERIFY_EMAIL", 15))
+    except Exception as error:  # noqa: BLE001
+        print(f"Sending failed: {error}")
+        print("Check FOCUSGUARD_SMTP_HOST, _PORT, _USERNAME and _PASSWORD in .env.")
+        return 1
+    print(f"Test email (code 123 456) sent to {args[0]} via {kind}.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

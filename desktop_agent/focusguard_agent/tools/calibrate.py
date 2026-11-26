@@ -20,6 +20,7 @@ import argparse
 import time
 
 import cv2
+import numpy as np
 
 from focusguard_agent.calibration.ear_calibration import (
     EarCalibrator,
@@ -36,7 +37,7 @@ from focusguard_agent.vision.scheduling import FrameRateLimiter
 from focusguard_shared.utilities import configure_logging
 
 
-def run(seconds: float, device: str | None, show: bool) -> int:
+def run(seconds: float, device: str | None, show: bool, keep_open: bool = False) -> int:
     settings = get_settings()
     camera_settings = settings.camera.model_copy()
     if device is not None:
@@ -61,8 +62,9 @@ def run(seconds: float, device: str | None, show: bool) -> int:
     print("  Blink normally - do NOT hold your eyes open.")
     print(f"  Measuring for {seconds:.0f} seconds.\n")
 
-    window = "FocusGuard - calibration"
+    window = "FocusGuard - camera check (close this window when you are done)"
     skipped_no_face = 0
+    closed_early = False
 
     with CameraSource(camera_settings) as camera, FaceLandmarkDetector(max_faces=1) as detector:
         deadline = time.monotonic() + camera_settings.open_timeout_seconds
@@ -129,8 +131,13 @@ def run(seconds: float, device: str | None, show: bool) -> int:
                     ],
                 )
                 cv2.imshow(window, canvas)
-                if (cv2.waitKey(1) & 0xFF) in (ord("q"), 27):
+                key = cv2.waitKey(1) & 0xFF
+                if key in (ord("q"), 27) or cv2.getWindowProperty(window, cv2.WND_PROP_VISIBLE) < 1:
+                    closed_early = True
                     break
+
+        if show and keep_open and not closed_early:
+            _live_view(camera, detector, limiter, window, calibrator, settings)
 
     if show:
         cv2.destroyAllWindows()
@@ -175,6 +182,60 @@ def run(seconds: float, device: str | None, show: bool) -> int:
     return 0
 
 
+def _live_view(camera, detector, limiter, window, calibrator, settings) -> None:
+    """After measuring, keep the camera and the analysis live until the window closes.
+
+    The person sees their face points and whether their eyes read as open or
+    closed against the threshold just measured - a check that it works for
+    them - for as long as they like. Nothing is recorded.
+    """
+    try:
+        threshold = calibrator.result().ear_threshold
+        headline = (f"done - your threshold {threshold:.3f}", (120, 220, 120))
+    except ValueError:
+        threshold = settings.vision.default_ear_threshold
+        headline = ("not enough face samples - close and retry", (60, 60, 220))
+
+    canvas = None
+    last_index = -1
+    while True:
+        now = time.monotonic()
+        frame = camera.read()
+        if frame is None or camera.state is not CameraState.OK:
+            canvas = np.zeros((360, 640, 3), dtype=np.uint8)
+            cv2.putText(canvas, "Waiting for the camera...", (24, 180),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 204, 255), 2, cv2.LINE_AA)
+        elif frame.index != last_index:
+            last_index = frame.index
+            measured = camera.stats.measured_fps()
+            if limiter.should_run(now, 1.0 / measured if measured > 0 else None):
+                canvas = frame.image.copy()
+                result = detector.detect(frame.image, timestamp=now)
+                lines = [headline]
+                if result.primary is None:
+                    lines.append(("face         not visible", (60, 60, 220)))
+                else:
+                    height, width = frame.image.shape[:2]
+                    draw_landmarks(canvas, result.primary.pixel_landmarks(width, height))
+                    state = analyse_eyes(result.primary, width, height, ear_threshold=threshold)
+                    if state.valid:
+                        lines.append((
+                            f"eyes         {'closed' if state.eyes_closed else 'open'}"
+                            f"  (EAR {state.ear_average:.2f})",
+                            (60, 60, 220) if state.eyes_closed else (190, 190, 190),
+                        ))
+                lines.append(("close this window when you are done", (0, 200, 255)))
+                draw_status_panel(canvas, lines, width=330)
+
+        if canvas is not None:
+            cv2.imshow(window, canvas)
+        key = cv2.waitKey(15) & 0xFF
+        if key in (ord("q"), 27) or (
+            canvas is not None and cv2.getWindowProperty(window, cv2.WND_PROP_VISIBLE) < 1
+        ):
+            return
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="FocusGuard personal EAR calibration")
     parser.add_argument("--seconds", type=float, default=12.0, help="measurement window")
@@ -182,6 +243,11 @@ def main() -> int:
     parser.add_argument("--show", action="store_true", help="show a preview window")
     parser.add_argument(
         "--print", action="store_true", dest="print_only", help="print the saved profile and exit"
+    )
+    parser.add_argument(
+        "--keep-open",
+        action="store_true",
+        help="after measuring, keep the live camera view open until the window is closed",
     )
     parser.add_argument(
         "--wait-on-exit",
@@ -205,10 +271,11 @@ def main() -> int:
         print(f"Created    : {profile.created_at}")
         return 0
 
-    code = run(args.seconds, args.device, args.show)
-    if args.wait_on_exit:
-        # Opened from the portal in a window of its own: without this, the
-        # result would print and the window close before anyone read it.
+    code = run(args.seconds, args.device, args.show, keep_open=args.keep_open)
+    if args.wait_on_exit and code != 0:
+        # Opened from the portal in a window of its own: without this, an
+        # error (no camera, no face) would print and the window would close
+        # before anyone read it. A success needs no extra keypress.
         try:
             input("\nPress Enter to close this window.")
         except EOFError:

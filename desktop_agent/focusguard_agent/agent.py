@@ -103,10 +103,23 @@ class FocusGuardAgent:
         session_name: str = "Focus session",
         task: TaskContext | None = None,
         store: LocalStore | None = None,
+        preview: bool = False,
     ) -> None:
         self.settings = settings or get_settings()
         self.session_name = session_name
         self.task = task
+
+        #: A live window showing the camera and what is being analysed. The
+        #: session runs for exactly as long as this window is open: closing it
+        #: (or pressing Esc in it) ends the session cleanly.
+        self.preview = preview
+        self._preview_limiter = FrameRateLimiter(15)
+        self._preview_shown = False
+        self._last_landmarks_px = None
+        self._last_eye = None
+        self._last_pose = None
+        self._last_gaze = None
+        self._last_phone = None
 
         self.store = store or LocalStore()
         self.status = SubsystemStatus()
@@ -389,6 +402,9 @@ class FocusGuardAgent:
                 face_present = primary is not None
                 height, width = frame.image.shape[:2]
 
+                self._last_landmarks_px = (
+                    primary.pixel_landmarks(width, height) if primary is not None else None
+                )
                 if primary is not None:
                     eye_state = analyse_eyes(primary, width, height, self.ear_threshold)
                     pose = estimate_head_pose(
@@ -404,6 +420,7 @@ class FocusGuardAgent:
                     )
 
                 self._drive_vision_events(now, camera_ok, result.face_count, eye_state, pose, gaze)
+                self._last_eye, self._last_pose, self._last_gaze = eye_state, pose, gaze
 
         elif self._camera is not None:
             # Camera down. Drive the monitors so they suspend rather than
@@ -413,6 +430,7 @@ class FocusGuardAgent:
         if self._phone_detector is not None and camera_ok and frame is not None:
             if self._phone_limiter.should_run(now, frame_period):
                 detection = self._phone_detector.detect(frame.image, timestamp=now)
+                self._last_phone = detection
                 self._record(
                     self._phone.update(
                         PhoneObservation(
@@ -429,6 +447,76 @@ class FocusGuardAgent:
 
         if self._score_limiter.should_run(now, 1.0):
             self._record_score(now, camera_ok, face_present)
+
+        if self.preview and self._preview_limiter.should_run(now, None):
+            self._show_preview(frame.image if (camera_ok and frame is not None) else None)
+
+    # -- the live analysis window -------------------------------------------
+
+    _PREVIEW_WINDOW = "FocusGuard - live analysis (close this window to end the session)"
+
+    def _show_preview(self, image) -> None:
+        """Draw what is being analysed; end the session when the window closes.
+
+        Runs on the capture loop's own thread (OpenCV windows must be driven
+        from the thread that created them) at 15 fps, well below the camera
+        rate, so it costs little. Nothing drawn here is saved or uploaded.
+        """
+        import cv2
+        import numpy as np
+
+        from focusguard_agent.vision.drawing import draw_landmarks, draw_status_panel
+
+        if image is None:
+            # Camera paused (e.g. Camo app closed or phone locked): keep the
+            # window up and say so, rather than freezing or closing it.
+            canvas = np.zeros((360, 640, 3), dtype=np.uint8)
+            camera = self.settings.camera.device_name or "the camera"
+            cv2.putText(canvas, f"Waiting for {camera}...", (24, 170),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 204, 255), 2, cv2.LINE_AA)
+            cv2.putText(canvas, "Monitoring continues when it is back. Close this window to end.",
+                        (24, 205), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1, cv2.LINE_AA)
+        else:
+            canvas = image.copy()
+            if self._last_landmarks_px is not None:
+                draw_landmarks(canvas, self._last_landmarks_px)
+
+            yellow, grey, red, blue = (0, 204, 255), (200, 200, 200), (60, 60, 220), (229, 135, 57)
+            snapshot = self.latest_snapshot
+            lines: list[tuple[str, tuple[int, int, int]]] = []
+            if snapshot is not None:
+                lines.append((f"focus        {snapshot.combined_focus_score:5.0f}", yellow))
+            if self._last_landmarks_px is None:
+                lines.append(("face         not visible", red))
+            else:
+                eye = self._last_eye
+                if eye is not None and eye.valid:
+                    state = "closed" if eye.eyes_closed else "open"
+                    lines.append((f"eyes         {state}  (EAR {eye.ear_average:.2f})",
+                                  red if eye.eyes_closed else grey))
+                pose = self._last_pose
+                if pose is not None and pose.valid:
+                    lines.append((f"head         {str(pose.direction).lower().replace('_', ' ')}",
+                                  grey))
+                gaze = self._last_gaze
+                if gaze is not None and gaze.valid:
+                    lines.append((f"gaze         {str(gaze.direction).lower().replace('_', ' ')}"
+                                  f"  ({gaze.confidence * 100:.0f}%)", grey))
+            phone = self._last_phone
+            if phone is not None:
+                seen = f"seen  ({phone.best_confidence * 100:.0f}%)" if phone.detected else "no"
+                lines.append((f"phone        {seen}", red if phone.detected else grey))
+            lines.append(("close this window to end", blue))
+            draw_status_panel(canvas, lines, width=310)
+
+        cv2.imshow(self._PREVIEW_WINDOW, canvas)
+        key = cv2.waitKey(1) & 0xFF
+        self._preview_shown = True
+
+        closed = cv2.getWindowProperty(self._PREVIEW_WINDOW, cv2.WND_PROP_VISIBLE) < 1
+        if key == 27 or closed:
+            print("\nAnalysis window closed. Ending the session ...")
+            self.stop()
 
     def _drive_vision_events(self, now, camera_ok, face_count, eye_state, pose, gaze) -> None:
         self._record(
@@ -620,6 +708,11 @@ class FocusGuardAgent:
 
         summary = self._scoring.finish(now)
 
+        if self.preview and self._preview_shown:
+            import cv2
+
+            cv2.destroyAllWindows()
+
         if self._camera is not None:
             self._camera.stop()
         if self._landmarks is not None:
@@ -711,6 +804,11 @@ def main() -> int:
         help="work on a task your manager assigned (see: python -m focusguard_agent.tools.tasks)",
     )
     parser.add_argument("--seconds", type=float, help="stop automatically after this long")
+    parser.add_argument(
+        "--preview",
+        action="store_true",
+        help="show a live analysis window; closing it ends the session",
+    )
     args = parser.parse_args()
 
     settings = get_settings()
@@ -742,13 +840,21 @@ def main() -> int:
         if session_name == parser.get_default("name"):
             session_name = assigned.name
 
-    agent = FocusGuardAgent(settings=settings, session_name=session_name, task=task)
+    agent = FocusGuardAgent(
+        settings=settings, session_name=session_name, task=task, preview=args.preview
+    )
 
     def handle_signal(*_: object) -> None:
         agent.stop()
 
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
+    if hasattr(signal, "SIGBREAK"):
+        # Windows delivers closing the console window (the X button) as
+        # SIGBREAK. Handling it lets the session end cleanly - open events
+        # closed and saved - in the few seconds Windows allows, instead of
+        # the process simply vanishing.
+        signal.signal(signal.SIGBREAK, handle_signal)
 
     return agent.run(duration_seconds=args.seconds)
 

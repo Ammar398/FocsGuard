@@ -176,7 +176,7 @@ export function ThisComputer({ onSessionChange }: { onSessionChange?: () => void
           <StepPanel
             icon={<IconCamera />}
             title="Camera check in progress"
-            body="A camera window is open on your computer. Look at the screen and blink normally for about 12 seconds, then press Enter in that window. This updates by itself when it closes."
+            body="A camera window is open on your computer. Look at the screen and blink normally for the first 12 seconds; after that it shows live analysis for as long as you keep it open. Close the window when you are done - this panel updates by itself."
           >
             <span className="inline-flex items-center gap-2 text-sm text-[var(--color-muted)]">
               <Pulse /> Waiting for the camera window…
@@ -192,8 +192,8 @@ export function ThisComputer({ onSessionChange }: { onSessionChange?: () => void
               <>
                 Opens a camera window on your computer showing face points, and spends 12 seconds
                 learning how <em>your</em> eyes look when open - so a normal blink is never
-                mistaken for closed eyes. Nothing is recorded; the result is one number kept on
-                this computer.
+                mistaken for closed eyes. It then stays live until you close it. Nothing is
+                recorded; the result is one number kept on this computer.
                 {status.camera.device_name && (
                   <span className="mt-2 block text-xs">
                     Camera: <strong>{status.camera.device_name}</strong>. If it is a phone camera
@@ -412,7 +412,7 @@ function StartStudySession({ busy, run }: { busy: Busy; run: Run }) {
           .map((item) => item.trim())
           .filter(Boolean),
       })
-      return 'Started. Keep working - this page can stay open or be closed.'
+      return 'Started. A live analysis window opened on your computer; the session runs until you close it or press Stop here.'
     })
   }
 

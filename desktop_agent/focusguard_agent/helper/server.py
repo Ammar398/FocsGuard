@@ -237,6 +237,14 @@ class FocusGuardHelper:
         if not approved:
             raise HelperError(403, "Connection was declined on the computer.")
 
+        # Already connected (to another account, or an earlier one): send the
+        # current secret as proof that this really is the same computer, so the
+        # server lets the connection move rather than refusing it.
+        try:
+            current_secret: str | None = load_credential().device_secret
+        except NotEnrolled:
+            current_secret = None
+
         try:
             with self._client_factory(backend) as client:
                 credential = client.enroll(
@@ -245,6 +253,7 @@ class FocusGuardHelper:
                     platform=f"{platform.system()} {platform.release()}",
                     agent_version=self.settings.agent_version,
                     consent_version=CONSENT_VERSION,
+                    replace_device_secret=current_secret,
                 )
         except EnrollmentFailed as error:
             raise HelperError(400, str(error)) from error
@@ -280,16 +289,16 @@ class FocusGuardHelper:
         approved = self._ask(
             "FocusGuard - open the camera check?",
             f"Open a camera window using {camera}?\n\n"
-            "You will see yourself with face points drawn on. For about 12 seconds,\n"
+            "You will see yourself with face points drawn on. For the first 12 seconds,\n"
             "look at the screen and blink normally while FocusGuard learns how your\n"
-            "eyes look when they are open, so it can tell blinks from closed eyes.\n\n"
+            "eyes look when they are open. The window then stays live until you close it.\n\n"
             "Nothing is recorded or uploaded. The result is one number, kept on this\n"
             "computer. If you use a phone camera app (Camo, DroidCam), open it first.",
         )
         if not approved:
             raise HelperError(403, "The camera check was declined on the computer.")
 
-        self._camera_process = self._camera_launcher(["--show", "--wait-on-exit"])
+        self._camera_process = self._camera_launcher(["--show", "--keep-open", "--wait-on-exit"])
         logger.info("Camera check opened from the portal")
         return {"ok": True}
 
@@ -340,7 +349,9 @@ class FocusGuardHelper:
         if not approved:
             raise HelperError(403, "Starting the session was declined on the computer.")
 
-        self._launcher(arguments)
+        # --preview: a live analysis window that stays up for the whole
+        # session; closing it is how the person ends the session.
+        self._launcher([*arguments, "--preview"])
         logger.info("Session %r started from the portal", name)
         return {"ok": True, "name": name}
 
