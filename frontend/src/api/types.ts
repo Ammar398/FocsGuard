@@ -19,6 +19,8 @@ export interface User {
   role: Role
   organization_id: number | null
   is_active: boolean
+  /** False until the emailed six-digit code is entered (self sign-up only). */
+  email_verified: boolean
 }
 
 export interface TokenPair {

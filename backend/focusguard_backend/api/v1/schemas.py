@@ -247,6 +247,8 @@ class UserOut(BaseModel):
     role: str
     organization_id: int | None = None
     is_active: bool
+    #: False until the emailed code is entered (self-registered accounts only).
+    email_verified: bool = True
 
 
 class MessageResponse(BaseModel):

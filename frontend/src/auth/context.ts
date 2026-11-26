@@ -16,14 +16,17 @@ export interface AuthState {
   /** True until we know whether the stored session is still valid. */
   loading: boolean
   signIn: (email: string, password: string) => Promise<void>
-  register: (email: string, password: string, fullName: string) => Promise<void>
+  /** Resolves true when the account must still be verified with an emailed code. */
+  register: (email: string, password: string, fullName: string) => Promise<boolean>
   /** Create a new organisation with the caller as its first manager. */
   registerOrganization: (
     organizationName: string,
     email: string,
     password: string,
     fullName: string,
-  ) => Promise<void>
+  ) => Promise<boolean>
+  /** Enter the emailed code; signs the person in. */
+  verifyEmail: (email: string, code: string) => Promise<void>
   signOut: () => Promise<void>
 }
 

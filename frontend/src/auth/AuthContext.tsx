@@ -50,18 +50,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = useCallback(
     async (email: string, password: string, fullName: string) => {
-      await api.register(email, password, fullName)
-      // Signing in straight away: making someone type the same password twice
-      // in ten seconds achieves nothing.
+      const created = await api.register(email, password, fullName)
+      // Unverified: the emailed code signs them in (verifyEmail below).
+      if (!created.email_verified) return true
+      // Verification switched off on this server: sign in straight away.
       setUser(await api.login(email, password))
+      return false
     },
     [],
   )
 
+  const verifyEmail = useCallback(async (email: string, code: string) => {
+    setUser(await api.verifyEmail(email, code))
+  }, [])
+
   const registerOrganization = useCallback(
     async (organizationName: string, email: string, password: string, fullName: string) => {
-      await api.registerOrganization(organizationName, email, password, fullName)
+      const created = await api.registerOrganization(organizationName, email, password, fullName)
+      if (!created.email_verified) return true
       setUser(await api.login(email, password))
+      return false
     },
     [],
   )
@@ -72,8 +80,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo(
-    () => ({ user, loading, signIn, register, registerOrganization, signOut }),
-    [user, loading, signIn, register, registerOrganization, signOut],
+    () => ({ user, loading, signIn, register, registerOrganization, verifyEmail, signOut }),
+    [user, loading, signIn, register, registerOrganization, verifyEmail, signOut],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -12,7 +12,7 @@ FocusGuard does **not** diagnose ADHD or any medical condition. It reports obser
 evidence behind every observation, and the wording is enforced by tests.
 
 > **Status: all 23 phases implemented.** Student mode (Phases 0–15) and business mode (Phases 16–22)
-> are complete; Phase 23 hardening is done. 686 automated tests. See
+> are complete; Phase 23 hardening is done. 705 automated tests. See
 > [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md) and [CURRENT_STATE.md](CURRENT_STATE.md).
 
 ---
@@ -32,6 +32,10 @@ evidence behind every observation, and the wording is enforced by tests.
 - Foreground application and duration, normalised (`Code.exe` → Visual Studio Code)
 - Chrome / Edge extension: active-tab **domain** only, minimised inside the browser
 - Task-context-aware classification: productive / neutral / distracting depends on the task
+
+**Accounts**
+- Sign-up confirmed with a 6-digit code sent by email; forgot-password reset by emailed code
+- Without an SMTP server configured, emails are saved to `dev_outbox/` instead of being sent
 
 **Student mode**
 - Live focus ring, timeline with event overlays explaining every dip
@@ -172,7 +176,7 @@ extension popup. Details: [docs/browser_extension.md](docs/browser_extension.md)
 ## Testing
 
 ```powershell
-pytest                      # 686 tests, ~60 s, no camera / GPU / network needed
+pytest                      # 705 tests, ~75 s, no camera / GPU / network needed
 ruff check .
 cd frontend; npm run lint; npm run build
 ```
@@ -204,6 +208,10 @@ your device (`Camo`, `DroidCam`, `Pixel`). List devices with
 
 **`module 'mediapipe' has no attribute 'solutions'`.** Expected on MediaPipe 1.x. FocusGuard uses the
 Tasks API; most online tutorials use the removed one.
+
+**Where is my verification or reset code?** Without `FOCUSGUARD_SMTP_HOST` in `.env`, nothing is
+emailed: each message is saved as a `.eml` file in `dev_outbox/` (double-click to open). Configure SMTP
+in `.env` to send real email (see `.env.example`; Gmail needs an App Password).
 
 **Signed out every time the backend restarts.** Set `JWT_SECRET_KEY` in `.env`. Without it a random key
 is generated per start, deliberately — there is no default secret in source.

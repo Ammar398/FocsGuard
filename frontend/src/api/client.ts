@@ -219,6 +219,44 @@ export const api = {
     })
   },
 
+  /** Confirm a new account with its emailed code. Signs the person in. */
+  async verifyEmail(email: string, code: string): Promise<User> {
+    const tokens = await request<TokenPair>('/auth/verify-email', {
+      method: 'POST',
+      anonymous: true,
+      body: { email, code },
+    })
+    storeTokens(tokens)
+    return request<User>('/auth/me')
+  },
+
+  async resendVerification(email: string): Promise<string> {
+    const reply = await request<{ detail: string }>('/auth/verify-email/resend', {
+      method: 'POST',
+      anonymous: true,
+      body: { email },
+    })
+    return reply.detail
+  },
+
+  async forgotPassword(email: string): Promise<string> {
+    const reply = await request<{ detail: string }>('/auth/password/forgot', {
+      method: 'POST',
+      anonymous: true,
+      body: { email },
+    })
+    return reply.detail
+  },
+
+  async resetPassword(email: string, code: string, newPassword: string): Promise<string> {
+    const reply = await request<{ detail: string }>('/auth/password/reset', {
+      method: 'POST',
+      anonymous: true,
+      body: { email, code, new_password: newPassword },
+    })
+    return reply.detail
+  },
+
   async login(email: string, password: string): Promise<User> {
     const tokens = await request<TokenPair>('/auth/login', {
       method: 'POST',

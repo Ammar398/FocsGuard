@@ -74,3 +74,27 @@ class RefreshToken(Base, TimestampMixin):
 
     def is_usable(self, now: datetime) -> bool:
         return not self.is_revoked and not self.is_expired(now)
+
+
+class EmailCode(Base, TimestampMixin):
+    """A six-digit code sent by email: sign-up verification or password reset.
+
+    Stored as a hash, never the code. Single use (`consumed_at`), short-lived
+    (`expires_at`), and limited to a few guesses (`attempts`) - with a million
+    possible codes and five tries, a guesser's odds are 1 in 200,000 per code.
+    """
+
+    __tablename__ = "email_codes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    #: VERIFY_EMAIL or RESET_PASSWORD. A code for one never works for the other.
+    purpose: Mapped[str] = mapped_column(String(20), nullable=False)
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    attempts: Mapped[int] = mapped_column(default=0, nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (Index("ix_email_codes_user_purpose", "user_id", "purpose"),)

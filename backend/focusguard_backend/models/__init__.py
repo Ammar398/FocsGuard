@@ -5,7 +5,7 @@ autogenerate and `create_all` both rely on. A model that is never imported is
 invisible to both, and its table silently never gets created.
 """
 
-from focusguard_backend.models.auth import RefreshToken
+from focusguard_backend.models.auth import EmailCode, RefreshToken
 from focusguard_backend.models.base import Base, TimestampMixin, utc_now
 from focusguard_backend.models.business import Project, Task
 from focusguard_backend.models.identity import (
@@ -27,6 +27,7 @@ __all__ = [
     "ActivityEvent",
     "Base",
     "Department",
+    "EmailCode",
     "Device",
     "DeviceHeartbeat",
     "FocusScore",

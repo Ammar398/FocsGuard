@@ -27,6 +27,11 @@ from focusguard_backend.api.v1.schemas import UserOut
 from focusguard_backend.auth.passwords import hash_password, validate_password_strength
 from focusguard_backend.database.session import get_db
 from focusguard_backend.models.identity import Department, Organization, User
+from focusguard_backend.services.email_codes import (
+    VERIFY_EMAIL,
+    issue_and_send,
+    verification_required,
+)
 from focusguard_shared.constants import UserRole
 from focusguard_shared.utilities import get_logger
 
@@ -87,6 +92,7 @@ def register_organization(
         role=UserRole.MANAGER.value,
         organization_id=organization.id,
         is_active=True,
+        email_verified=not verification_required(),
     )
     db.add(manager)
     db.add_all(
@@ -94,6 +100,9 @@ def register_organization(
     )
     db.commit()
     db.refresh(manager)
+
+    if not manager.email_verified:
+        issue_and_send(db, manager, VERIFY_EMAIL)
 
     logger.info("Organisation %d created with manager %d", organization.id, manager.id)
     return UserOut.model_validate(manager)

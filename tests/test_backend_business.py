@@ -8,6 +8,7 @@ and suggestions. Then every manager route is probed from a second company.
 
 from __future__ import annotations
 
+import re
 import uuid as uuid_module
 from datetime import UTC, datetime, timedelta
 
@@ -15,6 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from focusguard_backend.database.session import create_all, get_engine, reset_engine
+from focusguard_backend.services.email import MemoryMailer, set_mailer
 
 NOW = datetime.now(UTC)
 PASSWORD = "correct horse battery"
@@ -29,14 +31,31 @@ def client(tmp_path, monkeypatch):
     from focusguard_backend.main import app
 
     ip_limiter.clear("testclient")
+    MAILER.messages.clear()
+    set_mailer(MAILER)
     create_all(get_engine())
     with TestClient(app) as test_client:
         yield test_client
+    set_mailer(None)
     reset_engine()
+
+
+#: Self-registered accounts must enter an emailed code before signing in; the
+#: tests read it from here, as a person would read it from their inbox.
+MAILER = MemoryMailer()
+
+
+def _emailed_code(email: str) -> str:
+    message = [m for m in MAILER.messages if m.to == email][-1]
+    return re.search(r"\b(\d{6})\b", message.subject).group(1)
 
 
 def _login(client: TestClient, email: str, password: str = PASSWORD) -> dict[str, str]:
     response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    if response.status_code == 403:
+        response = client.post(
+            "/api/v1/auth/verify-email", json={"email": email, "code": _emailed_code(email)}
+        )
     assert response.status_code == 200, response.text
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 

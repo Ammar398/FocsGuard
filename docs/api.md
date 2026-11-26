@@ -36,6 +36,10 @@ There was no reason to fall back to Flask.
 | `POST` | `/api/v1/auth/logout` | refresh token | end one session |
 | `POST` | `/api/v1/auth/logout-all` | user | end every session |
 | `GET` | `/api/v1/auth/me` | user | who the caller is |
+| `POST` | `/api/v1/auth/verify-email` | none | enter the emailed sign-up code; signs in |
+| `POST` | `/api/v1/auth/verify-email/resend` | none | send a new code (same reply for any address) |
+| `POST` | `/api/v1/auth/password/forgot` | none | email a reset code (same reply for any address) |
+| `POST` | `/api/v1/auth/password/reset` | none | code + new password; signs out every session |
 | `POST` | `/api/v1/devices` | user | prepare a device, get a one-time enrolment token |
 | `POST` | `/api/v1/devices/enroll` | enrolment token | redeem it for a device credential |
 | `GET` | `/api/v1/devices` | user | list devices in scope |
@@ -294,9 +298,25 @@ session is stored without it.
 
 ---
 
-## Not yet done
+## Email verification and password reset
 
-**Password reset.** Needs email delivery, which nothing in the project has yet.
+Self-registered accounts (students, and the first manager of a new organisation) start with
+`email_verified = false`. Registration emails a six-digit code; sign-in is refused with **403** until
+it is entered, and a correct password on an unverified account sends a fresh code. Accounts a manager
+creates, seeded accounts and every account that existed before this feature count as verified.
+
+Codes are stored as SHA-256 of `user:purpose:code`, expire after 15 minutes, work once, die after
+five wrong guesses, and are limited to one send a minute and five an hour. A verification code
+cannot reset a password and vice versa. "Resend" and "forgot password" reply identically whether or
+not an account exists. A password reset revokes every refresh token for the account.
+
+Mail goes through SMTP when `FOCUSGUARD_SMTP_HOST` is set; otherwise each message is saved as a
+`.eml` file in `dev_outbox/` and nothing is sent. `FOCUSGUARD_REQUIRE_EMAIL_VERIFICATION=0` turns
+verification off for a demo with no mail at all. The backend reads all of these from `.env`.
+
+---
+
+## Not yet done
 
 **httpOnly refresh-token cookie.** The portal keeps the refresh token in `localStorage`; moving it to a
 `SameSite` cookie needs CSRF protection and is the next hardening step (see `frontend/src/api/client.ts`).

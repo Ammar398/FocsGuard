@@ -1,27 +1,34 @@
 /**
- * Sign in, create a student account, or register an organisation.
+ * Sign in, sign up, verify an email address, and reset a forgotten password.
  *
- * ONE FORM, THREE MODES
+ * ONE PAGE, SIX MODES
+ * -------------------
+ *   signin        email + password
+ *   register      student sign-up            -> verify
+ *   organisation  manager + organisation     -> verify
+ *   verify        the six-digit emailed code -> signed in
+ *   forgot        email                      -> reset
+ *   reset         code + new password        -> signin
+ *
+ * They share the brand panel and the field styles; separate routes would be
+ * near-identical pages drifting apart.
+ *
+ * WHAT THE MESSAGES SAY
  * ---------------------
- * They differ by a field or two. Separate routes would be near-identical forms
- * drifting apart over time.
- *
- * WHAT THE ERROR MESSAGES SAY
- * ---------------------------
  * Whatever the server said, verbatim. The backend is deliberately vague - a
- * wrong password and an unknown account give the same reply, so that this page
- * cannot be used to ask "does this person have an account here?". Helpfully
- * rewording that into "no account with that email" here would undo the defence
- * from the client side.
+ * wrong password and an unknown account give the same reply, and "forgot
+ * password" says the same thing whether or not the address has an account - so
+ * this page cannot be used to ask "does this person have an account here?".
+ * Rewording those replies here would undo the defence from the client side.
  */
 
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 
-import { ApiError } from '../api/client'
+import { ApiError, api } from '../api/client'
 import { useAuth } from '../auth/context'
 import { IconChart, IconEye, IconLock, IconShield, Logo } from '../components/icons'
 
-type Mode = 'signin' | 'register' | 'organisation'
+type Mode = 'signin' | 'register' | 'organisation' | 'verify' | 'forgot' | 'reset'
 
 const HEADINGS: Record<Mode, { title: string; subtitle: string; submit: string }> = {
   signin: {
@@ -39,64 +46,136 @@ const HEADINGS: Record<Mode, { title: string; subtitle: string; submit: string }
     subtitle: 'You become its first manager. You can add your team next.',
     submit: 'Create organisation',
   },
+  verify: {
+    title: 'Check your email',
+    subtitle: 'We sent a 6-digit code. Enter it to finish and sign in.',
+    submit: 'Verify and sign in',
+  },
+  forgot: {
+    title: 'Forgot your password?',
+    subtitle: 'Enter your email and we will send you a code to reset it.',
+    submit: 'Send reset code',
+  },
+  reset: {
+    title: 'Choose a new password',
+    subtitle: 'Enter the 6-digit code from your email and a new password.',
+    submit: 'Change password',
+  },
 }
 
+/** Seconds a person waits before "send again"; matches the server's cooldown. */
+const RESEND_SECONDS = 60
+
 export function LoginPage() {
-  const { signIn, register, registerOrganization } = useAuth()
+  const { signIn, register, registerOrganization, verifyEmail } = useAuth()
 
   const [mode, setMode] = useState<Mode>('signin')
   const [organisation, setOrganisation] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
+  const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [cooldown, setCooldown] = useState(0)
 
-  const registering = mode !== 'signin'
+  useEffect(() => {
+    if (cooldown <= 0) return
+    const timer = window.setTimeout(() => setCooldown((value) => value - 1), 1000)
+    return () => window.clearTimeout(timer)
+  }, [cooldown])
+
+  const registering = mode === 'register' || mode === 'organisation'
   const heading = HEADINGS[mode]
 
-  function switchTo(next: Mode) {
+  function switchTo(next: Mode, message: string | null = null) {
     setMode(next)
     setError(null)
+    setNotice(message)
+    if (next === 'verify' || next === 'reset') {
+      setCode('')
+      setCooldown(RESEND_SECONDS)
+    }
+    if (next === 'reset') setPassword('')
   }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
     setError(null)
+    setNotice(null)
     setBusy(true)
 
     try {
       if (mode === 'organisation') {
-        await registerOrganization(organisation, email, password, fullName)
-      } else if (registering) {
-        await register(email, password, fullName)
+        const mustVerify = await registerOrganization(organisation, email, password, fullName)
+        if (mustVerify) switchTo('verify')
+      } else if (mode === 'register') {
+        const mustVerify = await register(email, password, fullName)
+        if (mustVerify) switchTo('verify')
+      } else if (mode === 'verify') {
+        await verifyEmail(email, code)
+      } else if (mode === 'forgot') {
+        switchTo('reset', await api.forgotPassword(email))
+      } else if (mode === 'reset') {
+        const message = await api.resetPassword(email, code, password)
+        setPassword('')
+        switchTo('signin', message)
       } else {
         await signIn(email, password)
       }
     } catch (caught) {
-      setError(
-        caught instanceof ApiError
-          ? caught.message
-          : 'Could not reach the server. Is the backend running?',
-      )
+      if (caught instanceof ApiError && caught.status === 403 && mode === 'signin') {
+        // The right password, but the email address was never confirmed. The
+        // server has just sent a fresh code, so go straight to entering it.
+        switchTo('verify', caught.message)
+      } else {
+        setError(
+          caught instanceof ApiError
+            ? caught.message
+            : 'Could not reach the server. Is the backend running?',
+        )
+      }
     } finally {
       setBusy(false)
     }
   }
+
+  async function resend() {
+    setError(null)
+    try {
+      const message =
+        mode === 'reset' ? await api.forgotPassword(email) : await api.resendVerification(email)
+      setNotice(message)
+      setCooldown(RESEND_SECONDS)
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : 'Could not send a new code.')
+    }
+  }
+
+  const needsCode = mode === 'verify' || mode === 'reset'
 
   return (
     <main className="grid min-h-screen lg:grid-cols-[1.05fr_1fr]">
       <BrandPanel />
 
       <div className="flex items-center justify-center p-6 sm:p-10">
-        <div className="w-full max-w-sm fg-rise">
+        <div key={mode} className="w-full max-w-sm fg-rise">
           <div className="mb-8 flex items-center gap-2.5 lg:hidden">
             <Logo size={32} id="fg-logo-mobile" />
             <span className="text-lg font-semibold tracking-tight">FocusGuard</span>
           </div>
 
           <h1 className="text-2xl font-semibold tracking-tight">{heading.title}</h1>
-          <p className="mt-1.5 text-sm text-[var(--color-muted)]">{heading.subtitle}</p>
+          <p className="mt-1.5 text-sm text-[var(--color-muted)]">
+            {heading.subtitle}
+            {needsCode && email && (
+              <>
+                {' '}
+                Sent to <strong className="text-[var(--color-ink)]">{email}</strong>.
+              </>
+            )}
+          </p>
 
           <form onSubmit={handleSubmit} className="mt-8 space-y-4">
             {mode === 'organisation' && (
@@ -120,26 +199,55 @@ export function LoginPage() {
               />
             )}
 
-            <Field
-              label="Email"
-              value={email}
-              onChange={setEmail}
-              type="email"
-              autoComplete="username"
-              required
-            />
+            {!needsCode && (
+              <Field
+                label="Email"
+                value={email}
+                onChange={setEmail}
+                type="email"
+                autoComplete="username"
+                required
+              />
+            )}
 
-            <Field
-              label="Password"
-              value={password}
-              onChange={setPassword}
-              type="password"
-              // Tells a password manager which one to offer, and which to save.
-              autoComplete={registering ? 'new-password' : 'current-password'}
-              required
-              hint={registering ? 'At least 8 characters. Longer beats complicated.' : undefined}
-            />
+            {needsCode && <CodeInput value={code} onChange={setCode} />}
 
+            {mode !== 'forgot' && mode !== 'verify' && (
+              <Field
+                label={mode === 'reset' ? 'New password' : 'Password'}
+                value={password}
+                onChange={setPassword}
+                type="password"
+                // Tells a password manager which one to offer, and which to save.
+                autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+                required
+                hint={
+                  mode === 'signin'
+                    ? undefined
+                    : 'At least 8 characters. Longer beats complicated.'
+                }
+                aside={
+                  mode === 'signin' ? (
+                    <button
+                      type="button"
+                      onClick={() => switchTo('forgot')}
+                      className="text-xs font-medium text-[var(--color-accent)] hover:underline"
+                    >
+                      Forgot password?
+                    </button>
+                  ) : undefined
+                }
+              />
+            )}
+
+            {notice !== null && (
+              <p
+                role="status"
+                className="rounded-xl bg-[var(--color-accent-soft)] px-3 py-2 text-sm text-[var(--color-ink)]"
+              >
+                {notice}
+              </p>
+            )}
             {error !== null && (
               <p
                 role="alert"
@@ -151,35 +259,76 @@ export function LoginPage() {
 
             <button
               type="submit"
-              disabled={busy}
+              disabled={busy || (needsCode && code.replace(/\D/g, '').length !== 6)}
               className="w-full rounded-xl px-4 py-2.5 font-medium text-white shadow-[var(--shadow-card)] transition hover:brightness-110 disabled:opacity-50"
               style={{ background: 'var(--brand-gradient)' }}
             >
               {busy ? 'Please wait…' : heading.submit}
             </button>
+
+            {needsCode && (
+              <p className="text-center text-sm text-[var(--color-muted)]">
+                Didn't get it? Check spam, or{' '}
+                {cooldown > 0 ? (
+                  <span>send again in {cooldown}s</span>
+                ) : (
+                  <LinkButton onClick={() => void resend()}>send a new code</LinkButton>
+                )}
+                .
+              </p>
+            )}
           </form>
 
           <div className="mt-6 space-y-2 text-center text-sm text-[var(--color-muted)]">
             {mode !== 'signin' && (
               <p>
-                Already have an account? <LinkButton onClick={() => switchTo('signin')}>Sign in</LinkButton>
+                {mode === 'verify' || mode === 'forgot' || mode === 'reset'
+                  ? 'Back to '
+                  : 'Already have an account? '}
+                <LinkButton onClick={() => switchTo('signin')}>Sign in</LinkButton>
               </p>
             )}
-            {mode !== 'register' && (
+            {(mode === 'signin' || mode === 'organisation') && (
               <p>
-                Studying? <LinkButton onClick={() => switchTo('register')}>Create a student account</LinkButton>
+                Studying?{' '}
+                <LinkButton onClick={() => switchTo('register')}>Create a student account</LinkButton>
               </p>
             )}
-            {mode !== 'organisation' && (
+            {(mode === 'signin' || mode === 'register') && (
               <p>
                 Managing a team?{' '}
-                <LinkButton onClick={() => switchTo('organisation')}>Register your organisation</LinkButton>
+                <LinkButton onClick={() => switchTo('organisation')}>
+                  Register your organisation
+                </LinkButton>
               </p>
             )}
           </div>
         </div>
       </div>
     </main>
+  )
+}
+
+/**
+ * The six-digit code: one field, large spaced digits, numeric keyboard on
+ * phones, and the browser's "one-time code" autofill (iOS/Android offer the
+ * code straight from the email or SMS).
+ */
+function CodeInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="block">
+      <span className="text-sm font-medium">6-digit code</span>
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value.replace(/[^\d ]/g, '').slice(0, 7))}
+        inputMode="numeric"
+        autoComplete="one-time-code"
+        placeholder="000 000"
+        autoFocus
+        required
+        className="mt-1.5 w-full rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] px-3.5 py-3 text-center text-2xl font-semibold tracking-[0.4em] outline-none transition placeholder:text-[var(--color-line)] focus:border-[var(--color-accent)] focus:ring-4 focus:ring-[var(--color-accent)]/15"
+      />
+    </label>
   )
 }
 
@@ -270,12 +419,16 @@ interface FieldProps {
   autoComplete?: string
   required?: boolean
   hint?: string
+  aside?: ReactNode
 }
 
-function Field({ label, value, onChange, type, autoComplete, required, hint }: FieldProps) {
+function Field({ label, value, onChange, type, autoComplete, required, hint, aside }: FieldProps) {
   return (
     <label className="block">
-      <span className="text-sm font-medium">{label}</span>
+      <span className="flex items-baseline justify-between gap-3">
+        <span className="text-sm font-medium">{label}</span>
+        {aside}
+      </span>
       <input
         type={type}
         value={value}

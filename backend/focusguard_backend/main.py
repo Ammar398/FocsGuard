@@ -31,6 +31,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from focusguard_backend.api.v1 import (
+    account,
     agent,
     auth,
     devices,
@@ -93,6 +94,7 @@ app.add_middleware(
 
 app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(organizations.router, prefix=API_PREFIX)
+app.include_router(account.router, prefix=API_PREFIX)
 app.include_router(devices.router, prefix=API_PREFIX)
 app.include_router(agent.router, prefix=API_PREFIX)
 app.include_router(sessions.router, prefix=API_PREFIX)

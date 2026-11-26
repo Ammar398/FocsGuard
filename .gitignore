@@ -62,3 +62,6 @@ desktop.ini
 backend/*.db
 backend/*.db-shm
 backend/*.db-wal
+
+# Emails saved instead of sent when no SMTP server is configured
+dev_outbox/

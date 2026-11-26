@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from focusguard_backend.models.base import Base, TimestampMixin
@@ -73,6 +73,14 @@ class User(Base, TimestampMixin):
     )
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    #: True unless the person signed themselves up and has not yet entered the
+    #: code emailed to them. Accounts a manager creates, and every account that
+    #: existed before verification was introduced, count as verified - so this
+    #: is a state only self-registration can put an account in.
+    email_verified: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=true(), nullable=False
+    )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     organization: Mapped[Organization | None] = relationship(back_populates="users")

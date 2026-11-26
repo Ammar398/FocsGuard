@@ -60,6 +60,11 @@ from focusguard_backend.auth.tokens import (
 from focusguard_backend.database.session import get_db
 from focusguard_backend.models.auth import RefreshToken
 from focusguard_backend.models.identity import User
+from focusguard_backend.services.email_codes import (
+    VERIFY_EMAIL,
+    issue_and_send,
+    verification_required,
+)
 from focusguard_shared.constants import UserRole
 from focusguard_shared.utilities import get_logger
 
@@ -162,10 +167,15 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> UserOut
         role=UserRole.STUDENT.value,
         organization_id=None,
         is_active=True,
+        # Confirmed by the six-digit code emailed below (services/email_codes).
+        email_verified=not verification_required(),
     )
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    if not user.email_verified:
+        issue_and_send(db, user, VERIFY_EMAIL)
 
     logger.info("Registered a new student account (id=%d)", user.id)
     return UserOut.model_validate(user)
@@ -202,6 +212,15 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
         # Same message as a wrong password: whether an account is disabled is
         # still information about whether it exists.
         raise _BAD_CREDENTIALS
+
+    if not user.email_verified:
+        # Only reachable with the right password, so saying so leaks nothing.
+        # A fresh code is sent (rate-limited) so the person can finish now.
+        issue_and_send(db, user, VERIFY_EMAIL)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Please verify your email address first. We have sent a code to it.",
+        )
 
     # A correct password proves this is the owner, so their counters are cleared -
     # two typos then a success should not leave them near a lockout.
