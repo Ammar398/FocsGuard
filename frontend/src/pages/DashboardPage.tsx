@@ -19,6 +19,7 @@
  * one this specification asks for.
  */
 
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { api } from '../api/client'
@@ -26,6 +27,8 @@ import type { SessionSummary } from '../api/types'
 import { Card, StatCard } from '../components/StatCard'
 import { FocusRing } from '../components/FocusRing'
 import { ThisComputer } from '../components/ThisComputer'
+import { IconAlert, IconArrowRight, IconClock, IconTarget } from '../components/icons'
+import { useAuth } from '../auth/context'
 import {
   formatDate,
   formatDuration,
@@ -59,6 +62,8 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <Greeting sessions={sessions} />
+
       <ThisComputer onSessionChange={refresh} />
 
       {error !== null && (
@@ -76,7 +81,11 @@ export function DashboardPage() {
         <CurrentSession session={current} live={live !== undefined} />
       )}
 
-      <Card title={`Recent sessions (${sessions.length})`}>
+      <Card
+        title="Recent sessions"
+        subtitle={`${sessions.length} recorded`}
+        icon={<IconClock size={18} />}
+      >
         {sessions.length === 0 ? (
           <p className="text-sm text-[var(--color-muted)]">Nothing recorded yet.</p>
         ) : (
@@ -104,17 +113,22 @@ function CurrentSession({ session, live }: { session: SessionSummary; live: bool
       : 0
 
   return (
-    <section className="rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-6">
+    <section className="fg-rise rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] p-6 shadow-[var(--shadow-card)]">
       <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
             {live && (
-              <span className="flex items-center gap-1.5 text-xs font-medium text-[var(--color-focus-high)]">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-[var(--color-focus-high)]" />
-                LIVE
+              <span className="flex items-center gap-1.5 rounded-full bg-[var(--color-focus-high)]/12 px-2 py-0.5 text-xs font-semibold text-[var(--color-focus-high)]">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--color-focus-high)]" />
+                Live
               </span>
             )}
-            <h1 className="text-xl font-semibold">{session.name}</h1>
+            <span className="text-xs font-medium text-[var(--color-muted)]">
+              {live ? '' : 'Latest session'}
+            </span>
+          </div>
+          <div>
+            <h1 className="mt-1 text-xl font-semibold tracking-tight">{session.name}</h1>
           </div>
           <p className="mt-1 text-sm text-[var(--color-muted)]">
             {session.task_name !== null && <>Working on {session.task_name} · </>}
@@ -124,9 +138,9 @@ function CurrentSession({ session, live }: { session: SessionSummary; live: bool
 
         <Link
           to={`/sessions/${session.id}`}
-          className="rounded-lg border border-[var(--color-line)] px-3 py-1.5 text-sm font-medium hover:border-[var(--color-accent)]"
+          className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-line)] px-3.5 py-1.5 text-sm font-medium transition hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
         >
-          See the timeline →
+          See the timeline <IconArrowRight size={16} />
         </Link>
       </header>
 
@@ -141,7 +155,11 @@ function CurrentSession({ session, live }: { session: SessionSummary; live: bool
         />
 
         <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-3">
-          <StatCard label="Duration" value={formatDuration(session.duration_seconds)} />
+          <StatCard
+            label="Duration"
+            value={formatDuration(session.duration_seconds)}
+            icon={<IconClock size={16} />}
+          />
           <StatCard
             label="Focused"
             value={formatDuration(session.focused_seconds)}
@@ -149,11 +167,13 @@ function CurrentSession({ session, live }: { session: SessionSummary; live: bool
               session.duration_seconds > 0 ? `${Math.round(focusedShare)}% of the session` : undefined
             }
             accent="var(--color-focus-high)"
+            icon={<IconTarget size={16} />}
           />
           <StatCard
             label="Interrupted"
             value={formatDuration(session.distracted_seconds)}
             accent="var(--color-focus-low)"
+            icon={<IconAlert size={16} />}
           />
         </div>
       </div>
@@ -173,7 +193,7 @@ function SessionRow({ session }: { session: SessionSummary }) {
     <li>
       <Link
         to={`/sessions/${session.id}`}
-        className="flex items-center gap-4 py-3 hover:opacity-80"
+        className="-mx-2 flex items-center gap-4 rounded-xl px-2 py-3 transition hover:bg-[var(--color-canvas)]"
       >
         <span
           aria-hidden="true"
@@ -190,8 +210,12 @@ function SessionRow({ session }: { session: SessionSummary }) {
         </span>
 
         <span
-          className="shrink-0 text-lg font-semibold tabular-nums"
-          style={{ color: scoreColor(session.average_focus_score) }}
+          className="flex h-10 w-12 shrink-0 items-center justify-center rounded-xl text-base font-semibold"
+          style={{
+            color: scoreColor(session.average_focus_score),
+            backgroundColor: `color-mix(in srgb, ${scoreColor(session.average_focus_score)} 12%, transparent)`,
+          }}
+          title="Average focus score"
         >
           {Math.round(session.average_focus_score)}
         </span>
@@ -227,5 +251,61 @@ function CommandLine() {
 python -m focusguard_agent.tools.stop                      # stop`}</code>
       </pre>
     </details>
+  )
+}
+
+/**
+ * A personal header with this week at a glance.
+ *
+ * Computed from the sessions the page already has - no extra request. The
+ * numbers describe sessions, never the person (spec section 8).
+ */
+function Greeting({ sessions }: { sessions: SessionSummary[] }) {
+  const { user } = useAuth()
+  const hour = new Date().getHours()
+  const part = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening'
+  const first = (user?.full_name ?? '').split(' ')[0]
+
+  // Captured once per mount: re-reading the clock on every render would let
+  // the window drift while the page sits open.
+  const [weekAgo] = useState(() => Date.now() - 7 * 24 * 3600 * 1000)
+  const week = sessions.filter(
+    (session) => session.ended_at !== null && new Date(session.started_at).getTime() >= weekAgo,
+  )
+  const monitored = week.reduce((sum, s) => sum + s.duration_seconds, 0)
+  const focused = week.reduce((sum, s) => sum + s.focused_seconds, 0)
+  const average =
+    monitored > 0
+      ? week.reduce((sum, s) => sum + s.average_focus_score * s.duration_seconds, 0) / monitored
+      : null
+
+  return (
+    <header className="fg-rise flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <p className="text-sm text-[var(--color-muted)]">
+          {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
+        </p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">
+          Good {part}
+          {first ? `, ${first}` : ''}
+        </h1>
+      </div>
+      {week.length > 0 && (
+        <dl className="flex gap-6 text-sm">
+          <Glance label="Sessions this week" value={String(week.length)} />
+          <Glance label="Focused" value={formatDuration(focused)} />
+          <Glance label="Average focus" value={average === null ? '-' : String(Math.round(average))} />
+        </dl>
+      )}
+    </header>
+  )
+}
+
+function Glance({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-xs text-[var(--color-muted)]">{label}</dt>
+      <dd className="mt-0.5 text-lg font-semibold tracking-tight">{value}</dd>
+    </div>
   )
 }

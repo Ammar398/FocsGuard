@@ -18,6 +18,12 @@ export interface HelperStatus {
   organization_id: number | null
   backend_url: string
   session: { running: boolean; name: string | null }
+  camera: {
+    device_name: string | null
+    check_running: boolean
+    calibrated: boolean
+    calibrated_at: string | null
+  }
 }
 
 export interface AssignedTask {
@@ -99,6 +105,8 @@ export const localHelper = {
     method: 'POST',
     body: JSON.stringify(body),
   }),
+
+  cameraCheck: () => call<{ ok: boolean }>('/camera/check', { method: 'POST', body: '{}' }),
 
   stop: () => call<{ ok: boolean }>('/sessions/stop', { method: 'POST', body: '{}' }, 10_000),
 }

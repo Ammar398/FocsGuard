@@ -19,7 +19,6 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -162,24 +161,31 @@ function DailyChart({ daily }: { daily: DayTotals[] }) {
     <div className="h-64 w-full">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 8, right: 8, bottom: 4, left: -20 }}>
-          <CartesianGrid stroke="var(--color-line)" strokeDasharray="3 3" vertical={false} />
-          <XAxis dataKey="label" stroke="var(--color-muted)" fontSize={12} />
+          {/* Solid hairline grid: dashed lines read as thresholds (dataviz skill). */}
+          <CartesianGrid stroke="var(--color-grid)" vertical={false} />
+          <XAxis
+            dataKey="label"
+            tick={{ fontSize: 12, fill: 'var(--color-muted)' }}
+            axisLine={{ stroke: 'var(--color-line)' }}
+            tickLine={false}
+          />
           <YAxis
-            stroke="var(--color-muted)"
-            fontSize={12}
+            tick={{ fontSize: 12, fill: 'var(--color-muted)' }}
+            axisLine={false}
+            tickLine={false}
             tickFormatter={(value: number) => `${Math.round(value)}m`}
           />
-          <Tooltip content={<DayTooltip />} cursor={{ fill: 'var(--color-line)', opacity: 0.4 }} />
-          <Bar dataKey="minutes" radius={[4, 4, 0, 0]} isAnimationActive={false}>
-            {data.map((day) => (
-              // Coloured by that day's focus score, so the chart carries two
-              // dimensions at once: how long, and how well.
-              <Cell
-                key={day.day}
-                fill={day.sessions > 0 ? scoreColor(day.average_focus_score) : 'var(--color-line)'}
-              />
-            ))}
-          </Bar>
+          <Tooltip content={<DayTooltip />} cursor={{ fill: 'var(--color-grid)', opacity: 0.6 }} />
+          {/* One series, one colour. The day's focus score is in the tooltip and
+              the table below, not painted onto the bar: colouring bars by value
+              double-encodes and burns the colour channel (dataviz skill). */}
+          <Bar
+            dataKey="minutes"
+            fill="var(--color-focus-high)"
+            radius={[4, 4, 0, 0]}
+            maxBarSize={36}
+            isAnimationActive={false}
+          />
         </BarChart>
       </ResponsiveContainer>
     </div>

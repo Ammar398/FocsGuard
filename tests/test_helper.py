@@ -67,6 +67,20 @@ def world(tmp_path, monkeypatch):
     answers: list[bool] = []
     asked: list[tuple[str, str]] = []
     launched: list[list[str]] = []
+    cameras: list = []
+
+    class FakeProcess:
+        def __init__(self, arguments):
+            self.arguments = arguments
+            self.done = False
+
+        def poll(self):
+            return 0 if self.done else None
+
+    def open_camera(arguments):
+        process = FakeProcess(arguments)
+        cameras.append(process)
+        return process
 
     def confirm(title: str, message: str) -> bool:
         asked.append((title, message))
@@ -77,10 +91,14 @@ def world(tmp_path, monkeypatch):
         confirm=confirm,
         launcher=launched.append,
         client_factory=FakeClient,
+        camera_launcher=open_camera,
     )
     server = HelperServer(helper, port=0)
     assert server.start()
-    yield {"port": server.port, "answers": answers, "asked": asked, "launched": launched}
+    yield {
+        "port": server.port, "answers": answers, "asked": asked,
+        "launched": launched, "cameras": cameras,
+    }
     server.stop()
 
 
@@ -240,3 +258,42 @@ def test_only_one_session_at_a_time_and_stop_asks_the_agent(world, monkeypatch) 
 
 def test_stop_with_nothing_running_is_a_409(world) -> None:
     assert call(world, "POST", "/sessions/stop", {})[0] == 409
+
+
+# --- camera check ---------------------------------------------------------------
+
+
+def test_the_camera_check_asks_then_opens_a_preview_with_calibration(world) -> None:
+    world["answers"].append(True)
+
+    status, _, _ = call(world, "POST", "/camera/check", {})
+
+    assert status == 200
+    assert "Nothing is recorded or uploaded" in world["asked"][0][1]
+    assert world["cameras"][0].arguments == ["--show", "--wait-on-exit"]
+    camera = call(world, "GET", "/status")[1]["camera"]
+    assert camera["check_running"] is True and camera["calibrated"] is False
+
+
+def test_a_session_cannot_start_while_the_camera_check_holds_the_camera(world) -> None:
+    world["answers"].append(True)
+    call(world, "POST", "/camera/check", {})
+
+    status, body, _ = call(world, "POST", "/sessions/start", {"name": "Study"})
+    assert status == 409 and "camera check" in body["error"]
+    assert call(world, "POST", "/camera/check", {})[0] == 409, "only one check at a time"
+
+    world["cameras"][0].done = True
+    world["answers"].append(True)
+    assert call(world, "POST", "/sessions/start", {"name": "Study"})[0] == 200
+
+
+def test_a_declined_camera_check_opens_nothing(world) -> None:
+    world["answers"].append(False)
+    assert call(world, "POST", "/camera/check", {})[0] == 403
+    assert world["cameras"] == []
+
+
+def test_the_camera_check_is_refused_from_another_website(world) -> None:
+    status, _, _ = call(world, "POST", "/camera/check", {}, origin="https://evil.example")
+    assert status == 403 and world["asked"] == []

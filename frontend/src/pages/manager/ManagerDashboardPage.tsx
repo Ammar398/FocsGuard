@@ -15,7 +15,6 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -25,6 +24,16 @@ import {
 import { api } from '../../api/client'
 import type { ManagerDashboard } from '../../api/managerTypes'
 import { Card, StatCard } from '../../components/StatCard'
+import {
+  IconAlert,
+  IconBolt,
+  IconChart,
+  IconCheck,
+  IconPhone,
+  IconTarget,
+  IconTasks,
+  IconUsers,
+} from '../../components/icons'
 import {
   Button,
   ClassificationBar,
@@ -36,7 +45,7 @@ import {
   WindowToggle,
 } from '../../components/manager/ui'
 import { tableClass, tdClass, thClass } from '../../components/manager/helpers'
-import { formatDuration, scoreColor } from '../../lib/format'
+import { formatDuration } from '../../lib/format'
 import { usePolling } from '../../lib/usePolling'
 
 export function ManagerDashboardPage() {
@@ -59,10 +68,12 @@ export function ManagerDashboardPage() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-4">
+      <header className="fg-rise flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">{data.organization.name}</h1>
           <p className="text-sm text-[var(--color-muted)]">Team overview, {windowLabel}</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">
+            {data.organization.name}
+          </h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <WindowToggle days={days} onChange={setDays} />
@@ -73,59 +84,105 @@ export function ManagerDashboardPage() {
 
       <ErrorBanner message={error} />
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="Employees" value={data.total_employees} />
-        <StatCard
-          label="Working now"
-          value={data.employees_online}
-          hint={`${data.employees_offline} offline`}
-          accent="var(--color-focus-high)"
-        />
-        <StatCard
-          label="Active tasks"
-          value={data.active_tasks}
-          hint={`${data.open_tasks} open · ${data.completed_tasks_in_window} completed ${windowLabel}`}
-        />
-        <StatCard
-          label="Average focus"
-          value={<Score value={totals.average_focus_score} />}
-          hint={`over ${formatDuration(totals.monitored_seconds)} monitored`}
-        />
-        <StatCard
-          label="Productive time"
-          value={formatDuration(totals.productive_seconds)}
-          accent="var(--color-focus-high)"
-        />
-        <StatCard
-          label="Distracting time"
-          value={formatDuration(totals.distracting_seconds)}
-          accent="var(--color-focus-low)"
-        />
-        <StatCard
-          label="Visual attention"
-          value={<Score value={totals.visual_attention_score} />}
-          hint="from webcam events"
-        />
-        <StatCard
-          label="Digital productivity"
-          value={<Score value={totals.digital_productivity_score} />}
-          hint="from app and site use"
-        />
+      <div className="grid gap-4 lg:grid-cols-[1.1fr_2fr]">
+        {/* The one hero figure on this view (dataviz skill): the team's focus. */}
+        <section
+          className="fg-rise relative overflow-hidden rounded-2xl p-6 text-white shadow-[var(--shadow-lift)]"
+          style={{ background: 'var(--brand-gradient)' }}
+        >
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -top-20 -right-16 h-56 w-56 rounded-full bg-white/10 blur-2xl"
+          />
+          <p className="relative flex items-center gap-2 text-sm text-white/80">
+            <IconTarget size={16} /> Team average focus
+          </p>
+          <p className="relative mt-3 text-6xl leading-none font-semibold tracking-tight">
+            {totals.average_focus_score === null ? '-' : Math.round(totals.average_focus_score)}
+          </p>
+          <p className="relative mt-3 text-sm text-white/80">
+            across {formatDuration(totals.monitored_seconds)} of monitored work, {windowLabel}
+          </p>
+          <div className="relative mt-6 grid grid-cols-2 gap-3 text-sm">
+            <div className="rounded-xl bg-white/12 p-3 backdrop-blur">
+              <p className="text-white/75">Visual attention</p>
+              <p className="mt-0.5 text-lg font-semibold">
+                {totals.visual_attention_score === null
+                  ? '-'
+                  : Math.round(totals.visual_attention_score)}
+              </p>
+            </div>
+            <div className="rounded-xl bg-white/12 p-3 backdrop-blur">
+              <p className="text-white/75">Digital productivity</p>
+              <p className="mt-0.5 text-lg font-semibold">
+                {totals.digital_productivity_score === null
+                  ? '-'
+                  : Math.round(totals.digital_productivity_score)}
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <StatCard
+            label="Employees"
+            value={data.total_employees}
+            icon={<IconUsers size={16} />}
+          />
+          <StatCard
+            label="Working now"
+            value={data.employees_online}
+            hint={`${data.employees_offline} offline`}
+            icon={<IconBolt size={16} />}
+          />
+          <StatCard
+            label="Active tasks"
+            value={data.active_tasks}
+            hint={`${data.open_tasks} open · ${data.completed_tasks_in_window} completed`}
+            icon={<IconTasks size={16} />}
+          />
+          <StatCard
+            label="Productive time"
+            value={formatDuration(totals.productive_seconds)}
+            icon={<IconCheck size={16} />}
+          />
+          <StatCard
+            label="Distracting time"
+            value={formatDuration(totals.distracting_seconds)}
+            icon={<IconAlert size={16} />}
+          />
+          <StatCard
+            label="Phone in view"
+            value={formatDuration(totals.phone_seconds)}
+            hint="webcam estimate"
+            icon={<IconPhone size={16} />}
+          />
+        </div>
       </div>
 
-      <Card title="Where the time went">
+      <Card
+        title="Where the time went"
+        subtitle="Computer activity, classified against each task's rules"
+        icon={<IconChart size={18} />}
+      >
         <ClassificationBar
           productive={totals.productive_seconds}
           neutral={totals.neutral_seconds}
           distracting={totals.distracting_seconds}
         />
         <p className="mt-3 text-xs text-[var(--color-muted)]">
-          Classified against each task's own rules, so a site can be productive for one task and
-          distracting for another.
+          A site can be productive for one task and distracting for another - YouTube for a
+          lecture versus during an API task.
         </p>
       </Card>
 
-      <Card title="Employees">
+      <Card
+        title="Employees"
+        // The API fills each row with the selected window's totals, so the
+        // caption follows the window rather than always saying "today".
+        subtitle={`Monitored time and focus, ${windowLabel}`}
+        icon={<IconUsers size={18} />}
+      >
         {data.employees.length === 0 ? (
           <p className="text-sm text-[var(--color-muted)]">
             No employees yet. <Link className="text-[var(--color-accent)]" to="/employees">Add one</Link>.
@@ -138,7 +195,7 @@ export function ManagerDashboardPage() {
                   <th className={thClass}>Name</th>
                   <th className={thClass}>Status</th>
                   <th className={thClass}>Current task</th>
-                  <th className={thClass}>Today</th>
+                  <th className={thClass}>Monitored</th>
                   <th className={thClass}>Focus</th>
                   <th className={thClass}>Productive</th>
                 </tr>
@@ -176,7 +233,7 @@ export function ManagerDashboardPage() {
                           <span className="text-[var(--color-muted)]">—</span>
                         )}
                       </td>
-                      <td data-label="Today" className={`${tdClass} tabular-nums`}>
+                      <td data-label="Monitored" className={`${tdClass} tabular-nums`}>
                         {formatDuration(today.monitored_seconds)}
                       </td>
                       <td data-label="Focus" className={tdClass}>
@@ -201,32 +258,37 @@ export function ManagerDashboardPage() {
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data.daily}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-line)" vertical={false} />
+                <CartesianGrid stroke="var(--color-grid)" vertical={false} />
                 <XAxis
                   dataKey="day"
                   tickFormatter={(day: string) => day.slice(5)}
                   tick={{ fontSize: 12, fill: 'var(--color-muted)' }}
+                  axisLine={{ stroke: 'var(--color-line)' }}
+                  tickLine={false}
                 />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 12, fill: 'var(--color-muted)' }} />
+                <YAxis
+                  domain={[0, 100]}
+                  ticks={[0, 25, 50, 75, 100]}
+                  tick={{ fontSize: 12, fill: 'var(--color-muted)' }}
+                  axisLine={false}
+                  tickLine={false}
+                />
                 <Tooltip
+                  cursor={{ fill: 'var(--color-grid)', opacity: 0.6 }}
                   formatter={(value) => [Math.round(Number(value)), 'Average focus']}
                   contentStyle={{
                     background: 'var(--color-surface)',
                     border: '1px solid var(--color-line)',
+                    borderRadius: 12,
+                    boxShadow: 'var(--shadow-lift)',
                   }}
                 />
-                <Bar dataKey="average_focus_score" radius={[4, 4, 0, 0]}>
-                  {data.daily.map((day) => (
-                    <Cell
-                      key={day.day}
-                      fill={
-                        day.monitored_seconds > 0
-                          ? scoreColor(day.average_focus_score)
-                          : 'var(--color-line)'
-                      }
-                    />
-                  ))}
-                </Bar>
+                <Bar
+                  dataKey="average_focus_score"
+                  fill="var(--color-focus-high)"
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={36}
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>

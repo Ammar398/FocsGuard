@@ -81,7 +81,7 @@ export function classificationColor(classification: string): string {
     case 'DISTRACTING':
       return 'var(--color-focus-low)'
     default:
-      return 'var(--color-muted)'
+      return 'var(--color-neutral-data)'
   }
 }
 

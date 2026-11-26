@@ -11,6 +11,15 @@ import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from 'react-rou
 
 import { AuthProvider } from './auth/AuthContext'
 import { useAuth } from './auth/context'
+import {
+  IconChart,
+  IconLogout,
+  IconSparkles,
+  IconTarget,
+  IconTasks,
+  IconUsers,
+  Logo,
+} from './components/icons'
 import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
 
@@ -116,58 +125,85 @@ function Shell() {
 }
 
 const MANAGER_LINKS = [
-  { to: '/', label: 'Overview' },
-  { to: '/employees', label: 'Employees' },
-  { to: '/tasks', label: 'Tasks' },
-  { to: '/team', label: 'Teams & projects' },
+  { to: '/', label: 'Overview', icon: <IconChart size={16} /> },
+  { to: '/employees', label: 'Employees', icon: <IconUsers size={16} /> },
+  { to: '/tasks', label: 'Tasks', icon: <IconTasks size={16} /> },
+  { to: '/team', label: 'Teams & projects', icon: <IconSparkles size={16} /> },
 ]
 
 const STUDENT_LINKS = [
-  { to: '/', label: 'Dashboard' },
-  { to: '/reports', label: 'Reports' },
+  { to: '/', label: 'Dashboard', icon: <IconTarget size={16} /> },
+  { to: '/reports', label: 'Reports', icon: <IconChart size={16} /> },
 ]
+
+const ROLE_LABEL: Record<string, string> = {
+  MANAGER: 'Manager',
+  EMPLOYEE: 'Employee',
+  STUDENT: 'Student',
+}
+
+function initials(name: string): string {
+  const parts = name.replace(/@.*/, '').split(/[\s._-]+/).filter(Boolean)
+  return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || '?'
+}
 
 function TopBar() {
   const { user, signOut } = useAuth()
   const links = user?.role === 'MANAGER' ? MANAGER_LINKS : STUDENT_LINKS
+  const name = user?.full_name ?? user?.email ?? ''
 
   return (
-    <header className="no-print border-b border-[var(--color-line)] bg-[var(--color-surface)]">
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3 sm:py-4">
-        <Link to="/" className="order-1 font-semibold">
-          FocusGuard
+    <header className="no-print sticky top-0 z-20 border-b border-[var(--color-line)] bg-[var(--color-surface)]/80 backdrop-blur-md">
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
+        <Link to="/" className="order-1 flex items-center gap-2.5">
+          <Logo size={30} id="fg-logo-top" />
+          <span className="text-[1.05rem] font-semibold tracking-tight">FocusGuard</span>
         </Link>
 
         {/* On phones the links take a full-width row of their own and scroll
             sideways if they must, rather than wrapping into a ragged block. */}
-        <nav className="order-3 -mx-1 flex w-full gap-1 overflow-x-auto sm:order-2 sm:mx-0 sm:w-auto sm:flex-1 sm:gap-4">
+        <nav className="order-3 -mx-1 flex w-full gap-1 overflow-x-auto sm:order-2 sm:mx-0 sm:w-auto sm:flex-1 sm:justify-center">
           {links.map((link) => (
             <NavLink
               key={link.to}
               to={link.to}
               end={link.to === '/'}
               className={({ isActive }) =>
-                `shrink-0 rounded-md px-2 py-1 text-sm whitespace-nowrap transition ${
+                `flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm whitespace-nowrap transition ${
                   isActive
-                    ? 'bg-[var(--color-accent)]/15 font-medium text-[var(--color-accent)]'
-                    : 'text-[var(--color-muted)] hover:text-[var(--color-ink)]'
+                    ? 'bg-[var(--color-accent-soft)] font-medium text-[var(--color-accent)]'
+                    : 'text-[var(--color-muted)] hover:bg-[var(--color-canvas)] hover:text-[var(--color-ink)]'
                 }`
               }
             >
+              {link.icon}
               {link.label}
             </NavLink>
           ))}
         </nav>
 
         <div className="order-2 flex items-center gap-3 text-sm sm:order-3">
-          <span className="hidden max-w-48 truncate text-[var(--color-muted)] md:inline">
-            {user?.full_name ?? user?.email}
-          </span>
+          <div className="hidden items-center gap-2.5 md:flex">
+            <span
+              className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white"
+              style={{ background: 'var(--brand-gradient)' }}
+              aria-hidden="true"
+            >
+              {initials(name)}
+            </span>
+            <span className="leading-tight">
+              <span className="block max-w-40 truncate font-medium">{name}</span>
+              <span className="block text-xs text-[var(--color-muted)]">
+                {ROLE_LABEL[user?.role ?? ''] ?? ''}
+              </span>
+            </span>
+          </div>
           <button
             type="button"
             onClick={() => void signOut()}
-            className="rounded-lg border border-[var(--color-line)] px-3 py-1.5 font-medium whitespace-nowrap hover:border-[var(--color-accent)]"
+            className="flex items-center gap-1.5 rounded-full border border-[var(--color-line)] px-3 py-1.5 font-medium whitespace-nowrap transition hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
           >
+            <IconLogout size={16} />
             Sign out
           </button>
         </div>

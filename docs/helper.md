@@ -11,6 +11,8 @@ Portal (browser)                FocusGuard Helper (127.0.0.1:48214)        Windo
                                                                          Yes ─► enrols, saves credential
 "Start session"          ──►    POST /sessions/start {name}    ──►  native dialog: "webcam will be analysed"
                                                                          Yes ─► agent opens in its own window
+"Open camera check"      ──►    POST /camera/check             ──►  native dialog: "open a camera window?"
+                                                                         Yes ─► preview + 12 s personal calibration
 "Stop session"           ──►    POST /sessions/stop                 agent closes cleanly and uploads
 ```
 
@@ -29,6 +31,7 @@ After that, everything happens in the portal:
 | Who | Sees in the portal | Clicks | Approves on the computer |
 |---|---|---|---|
 | Student | *This computer* panel | **Connect this computer** | the consent notice |
+| Anyone | *Check your camera* step | **Open camera check** | "open a camera window?" |
 | Student | session name and kind of work | **Start session** | "start monitoring?" |
 | Employee | their assigned tasks, with each task's rules | **Start** | "start monitoring?" |
 | Anyone | *Monitoring: …* | **Stop session** | — |
@@ -44,6 +47,16 @@ After that, everything happens in the portal:
 | Command injection through a session name | The agent is launched with an argument list, never a shell string |
 | Hidden monitoring | The agent always runs in its own visible window; the portal shows *Monitoring: …* |
 | Two dialogs stacked so one is clicked by mistake | Only one question at a time |
+| Two programs fighting over the webcam | A session cannot start while the camera check is open, and vice versa |
+
+## The camera check
+
+The third setup step opens `tools.calibrate --show --wait-on-exit` in its own window: the person sees
+themselves with face points drawn on, looks at the screen and blinks normally for 12 seconds. FocusGuard
+measures their open-eye Eye Aspect Ratio and saves one number - a personal eye-closure threshold - on
+that computer. Every later session uses it, so a normal blink is never mistaken for closed eyes and
+someone with naturally narrow eyes is not marked drowsy. Nothing is recorded or uploaded. The step can
+be skipped (sessions then use the default threshold of 0.21) and re-run any time.
 
 Chrome's *Private Network Access* checks are answered (`Access-Control-Allow-Private-Network`), so a
 portal served from a real domain can reach the helper once its origin is in the allow-list.

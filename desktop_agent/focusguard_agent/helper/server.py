@@ -18,6 +18,7 @@ The helper never opens the camera and never monitors anything. It only:
     POST /pair            connect this computer to the signed-in account   -> asks first
     POST /sessions/start  start the monitoring agent in its own window     -> asks first
     POST /sessions/stop   ask the running agent to stop cleanly
+    POST /camera/check    open the camera preview + personal calibration     -> asks first
 
 SECURITY
 --------
@@ -50,6 +51,7 @@ from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
+from focusguard_agent.calibration.ear_calibration import load_profile
 from focusguard_agent.config import AgentSettings, get_settings
 from focusguard_agent.synchronization.client import (
     BackendClient,
@@ -98,12 +100,22 @@ def native_confirm(title: str, message: str) -> bool:
     return ctypes.windll.user32.MessageBoxW(None, message, title, flags) == idyes
 
 
-def launch_agent(arguments: list[str]) -> subprocess.Popen:
-    """Start the monitoring agent in a new, visible console window."""
-    command = [sys.executable, "-m", "focusguard_agent.agent", *arguments]
+def _launch_module(module: str, arguments: list[str]) -> subprocess.Popen:
+    """Run `python -m module ...` in a new, visible console window."""
+    command = [sys.executable, "-m", module, *arguments]
     flags = subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0
-    # Same working directory as the helper, so the agent reads the same .env.
+    # Same working directory as the helper, so the child reads the same .env.
     return subprocess.Popen(command, cwd=os.getcwd(), creationflags=flags)  # noqa: S603
+
+
+def launch_agent(arguments: list[str]) -> subprocess.Popen:
+    """Start the monitoring agent in its own window."""
+    return _launch_module("focusguard_agent.agent", arguments)
+
+
+def launch_camera_check(arguments: list[str]) -> subprocess.Popen:
+    """Open the camera preview and personal calibration in its own window."""
+    return _launch_module("focusguard_agent.tools.calibrate", arguments)
 
 
 def _clean_text(value: Any, limit: int) -> str:
@@ -140,10 +152,15 @@ class FocusGuardHelper:
         confirm: Confirm = native_confirm,
         launcher: Launcher = launch_agent,
         client_factory: Callable[..., BackendClient] = BackendClient,
+        camera_launcher: Launcher = launch_camera_check,
     ) -> None:
         self.settings = settings or get_settings()
         self._confirm = confirm
         self._launcher = launcher
+        self._camera_launcher = camera_launcher
+        #: The open camera-check window, so a session cannot start while it
+        #: holds the camera (two processes cannot share most webcams).
+        self._camera_process: Any = None
         self._client_factory = client_factory
         #: One dialog at a time. Two stacked consent prompts invite a mis-click.
         self._asking = threading.Lock()
@@ -157,12 +174,23 @@ class FocusGuardHelper:
             return None
         return found[1] or "Focus session"
 
+    def _camera_check_running(self) -> bool:
+        process = self._camera_process
+        if process is None:
+            return False
+        poll = getattr(process, "poll", None)
+        if poll is None or poll() is not None:
+            self._camera_process = None
+            return False
+        return True
+
     def status(self) -> dict[str, Any]:
         try:
             credential = load_credential()
         except NotEnrolled:
             credential = None
         session = self._running_session()
+        profile = load_profile()
         return {
             "service": "focusguard-helper",
             "version": self.settings.agent_version,
@@ -173,6 +201,12 @@ class FocusGuardHelper:
                 credential.backend_url if credential else self.settings.sync.backend_url
             ),
             "session": {"running": session is not None, "name": session},
+            "camera": {
+                "device_name": self.settings.camera.device_name,
+                "check_running": self._camera_check_running(),
+                "calibrated": profile is not None,
+                "calibrated_at": profile.created_at if profile else None,
+            },
         }
 
     def _ask(self, title: str, message: str) -> bool:
@@ -230,10 +264,41 @@ class FocusGuardHelper:
         except TasksUnavailable as error:
             raise HelperError(502, str(error)) from error
 
+    def camera_check(self) -> dict[str, Any]:
+        """Open a camera preview that also measures this person's open-eye EAR.
+
+        Twelve seconds of looking at the screen and blinking normally. The
+        result is one number - a personal eye-closure threshold - saved on this
+        computer and used by every later session. No frame is stored or sent.
+        """
+        if self._running_session() is not None:
+            raise HelperError(409, "Stop the running session first; it is using the camera.")
+        if self._camera_check_running():
+            raise HelperError(409, "The camera check is already open on this computer.")
+
+        camera = self.settings.camera.device_name or "your webcam"
+        approved = self._ask(
+            "FocusGuard - open the camera check?",
+            f"Open a camera window using {camera}?\n\n"
+            "You will see yourself with face points drawn on. For about 12 seconds,\n"
+            "look at the screen and blink normally while FocusGuard learns how your\n"
+            "eyes look when they are open, so it can tell blinks from closed eyes.\n\n"
+            "Nothing is recorded or uploaded. The result is one number, kept on this\n"
+            "computer. If you use a phone camera app (Camo, DroidCam), open it first.",
+        )
+        if not approved:
+            raise HelperError(403, "The camera check was declined on the computer.")
+
+        self._camera_process = self._camera_launcher(["--show", "--wait-on-exit"])
+        logger.info("Camera check opened from the portal")
+        return {"ok": True}
+
     def start_session(self, payload: dict[str, Any]) -> dict[str, Any]:
         running = self._running_session()
         if running is not None:
             raise HelperError(409, f"A session is already running: {running!r}.")
+        if self._camera_check_running():
+            raise HelperError(409, "Close the camera check window first; it is using the camera.")
 
         name = _clean_text(payload.get("name"), 200) or "Focus session"
         arguments = ["--name", name]
@@ -398,6 +463,7 @@ def make_handler(helper: FocusGuardHelper, port: int) -> type[BaseHTTPRequestHan
                 "/pair": lambda body: helper.pair(body),
                 "/sessions/start": lambda body: helper.start_session(body),
                 "/sessions/stop": lambda body: helper.stop_session(),
+                "/camera/check": lambda body: helper.camera_check(),
             }
             route = routes.get(self.path)
             if route is None:

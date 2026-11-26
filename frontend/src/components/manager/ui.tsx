@@ -21,18 +21,19 @@ export function WindowToggle({
   onChange: (days: number) => void
 }) {
   return (
-    <div className="no-print flex gap-1 rounded-lg border border-[var(--color-line)] p-1">
+    <div className="no-print flex gap-1 rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] p-1 shadow-[var(--shadow-card)]">
       {WINDOWS.map((option) => (
         <button
           key={option.days}
           type="button"
           onClick={() => onChange(option.days)}
           aria-pressed={days === option.days}
-          className={`rounded-md px-3 py-1 text-sm font-medium ${
+          className={`rounded-full px-3.5 py-1 text-sm font-medium transition ${
             days === option.days
-              ? 'bg-[var(--color-accent)] text-white'
+              ? 'text-white'
               : 'text-[var(--color-muted)] hover:text-[var(--color-ink)]'
           }`}
+          style={days === option.days ? { background: 'var(--brand-gradient)' } : undefined}
         >
           {option.label}
         </button>
@@ -67,7 +68,16 @@ export function OnlineDot({ online }: { online: boolean }) {
   )
 }
 
-/** Productive / neutral / distracting as one stacked bar, with a legend. */
+/**
+ * Productive / neutral / distracting: the dataviz skill's tall segmented bar.
+ *
+ * One whole split into parts - 28 px, each part its own block with 4 px corners
+ * and a 2 px gap, its share printed inside when the block is wide enough. The
+ * legend names the parts in block order with their durations, and the bar's
+ * accessible name reads every part, so colour never carries meaning alone.
+ * Productive is blue and distracting red: a validated pair that stays apart
+ * under colour blindness, unlike green and red.
+ */
 export function ClassificationBar({
   productive,
   neutral,
@@ -82,33 +92,46 @@ export function ClassificationBar({
     return <p className="text-sm text-[var(--color-muted)]">No computer activity recorded.</p>
   }
   const parts = [
-    { label: 'Productive', seconds: productive, color: 'var(--color-focus-high)' },
-    { label: 'Neutral', seconds: neutral, color: 'var(--color-muted)' },
-    { label: 'Distracting', seconds: distracting, color: 'var(--color-focus-low)' },
-  ]
+    { label: 'Productive', seconds: productive, color: 'var(--color-focus-high)', ink: '#ffffff' },
+    { label: 'Neutral', seconds: neutral, color: 'var(--color-neutral-data)', ink: '#0b0b0b' },
+    { label: 'Distracting', seconds: distracting, color: 'var(--color-focus-low)', ink: '#ffffff' },
+  ].filter((part) => part.seconds > 0)
+
+  const share = (seconds: number) => Math.round((seconds / total) * 100)
+  const summary = parts
+    .map((part) => `${part.label} ${formatDuration(part.seconds)}, ${share(part.seconds)}%`)
+    .join('; ')
+
   return (
     <div>
-      <div className="flex h-3 overflow-hidden rounded-full bg-[var(--color-line)]">
+      <div className="flex h-7 gap-[2px]" role="img" aria-label={summary}>
         {parts.map((part) => (
           <div
             key={part.label}
-            style={{ width: `${(part.seconds / total) * 100}%`, backgroundColor: part.color }}
-            title={`${part.label}: ${formatDuration(part.seconds)}`}
-          />
+            className="flex items-center overflow-hidden rounded-[4px] px-2 text-xs font-semibold"
+            style={{
+              flexGrow: part.seconds,
+              flexBasis: 0,
+              backgroundColor: part.color,
+              color: part.ink,
+            }}
+            title={`${part.label}: ${formatDuration(part.seconds)} (${share(part.seconds)}%)`}
+          >
+            {/* Printed only where it fits; otherwise the legend and title carry it. */}
+            {part.seconds / total >= 0.1 ? `${share(part.seconds)}%` : ''}
+          </div>
         ))}
       </div>
       <ul className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">
         {parts.map((part) => (
           <li key={part.label} className="flex items-center gap-2">
             <span
-              className="inline-block h-2.5 w-2.5 rounded-sm"
+              className="inline-block h-2.5 w-2.5 rounded-[3px]"
               style={{ backgroundColor: part.color }}
-              aria-hidden
+              aria-hidden="true"
             />
             {part.label}
-            <span className="tabular-nums text-[var(--color-muted)]">
-              {formatDuration(part.seconds)} · {Math.round((part.seconds / total) * 100)}%
-            </span>
+            <span className="text-[var(--color-muted)]">{formatDuration(part.seconds)}</span>
           </li>
         ))}
       </ul>
@@ -176,8 +199,9 @@ export function Button({
   disabled?: boolean
 }) {
   const styles = {
-    primary: 'bg-[var(--color-accent)] text-white hover:opacity-90',
-    secondary: 'border border-[var(--color-line)] hover:border-[var(--color-accent)]',
+    primary: 'text-white shadow-[var(--shadow-card)] hover:brightness-110',
+    secondary:
+      'border border-[var(--color-line)] bg-[var(--color-surface)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]',
     danger:
       'border border-[var(--color-focus-low)]/40 text-[var(--color-focus-low)] hover:bg-[var(--color-focus-low)]/10',
   }[variant]
@@ -186,7 +210,8 @@ export function Button({
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className={`no-print rounded-lg px-3 py-1.5 text-sm font-medium transition disabled:opacity-50 ${styles}`}
+      className={`no-print rounded-xl px-3.5 py-1.5 text-sm font-medium transition disabled:opacity-50 ${styles}`}
+      style={variant === 'primary' ? { background: 'var(--brand-gradient)' } : undefined}
     >
       {children}
     </button>

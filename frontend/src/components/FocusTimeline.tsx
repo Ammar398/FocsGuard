@@ -105,7 +105,7 @@ export function FocusTimeline({ scores, events }: FocusTimelineProps) {
       <div className="h-72 w-full">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={points} margin={{ top: 8, right: 12, bottom: 4, left: -16 }}>
-            <CartesianGrid stroke="var(--color-line)" strokeDasharray="3 3" vertical={false} />
+            <CartesianGrid stroke="var(--color-grid)" vertical={false} />
 
             {/* Drawn before the line so the score stays legible on top of it. */}
             {bands.map((band) => (

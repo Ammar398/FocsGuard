@@ -12,7 +12,7 @@ FocusGuard does **not** diagnose ADHD or any medical condition. It reports obser
 evidence behind every observation, and the wording is enforced by tests.
 
 > **Status: all 23 phases implemented.** Student mode (Phases 0–15) and business mode (Phases 16–22)
-> are complete; Phase 23 hardening is done. 682 automated tests. See
+> are complete; Phase 23 hardening is done. 686 automated tests. See
 > [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md) and [CURRENT_STATE.md](CURRENT_STATE.md).
 
 ---
@@ -172,7 +172,7 @@ extension popup. Details: [docs/browser_extension.md](docs/browser_extension.md)
 ## Testing
 
 ```powershell
-pytest                      # 682 tests, ~70 s, no camera / GPU / network needed
+pytest                      # 686 tests, ~60 s, no camera / GPU / network needed
 ruff check .
 cd frontend; npm run lint; npm run build
 ```

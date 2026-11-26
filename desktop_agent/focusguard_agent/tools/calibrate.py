@@ -183,6 +183,11 @@ def main() -> int:
     parser.add_argument(
         "--print", action="store_true", dest="print_only", help="print the saved profile and exit"
     )
+    parser.add_argument(
+        "--wait-on-exit",
+        action="store_true",
+        help="keep the window open until Enter is pressed (used when the portal opens it)",
+    )
     args = parser.parse_args()
 
     configure_logging(level="WARNING")
@@ -200,7 +205,15 @@ def main() -> int:
         print(f"Created    : {profile.created_at}")
         return 0
 
-    return run(args.seconds, args.device, args.show)
+    code = run(args.seconds, args.device, args.show)
+    if args.wait_on_exit:
+        # Opened from the portal in a window of its own: without this, the
+        # result would print and the window close before anyone read it.
+        try:
+            input("\nPress Enter to close this window.")
+        except EOFError:
+            pass
+    return code
 
 
 if __name__ == "__main__":

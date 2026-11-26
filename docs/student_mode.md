@@ -9,7 +9,7 @@ how can I improve?*
 Once per computer:  python -m focusguard_agent.helper --install-startup   (see helper.md)
 Register in the portal (or sign in)
   → This computer → "Connect this computer"  → approve the consent notice in Windows
-  → (optional, once) python -m focusguard_agent.tools.calibrate
+  → "Open camera check" → approve → a camera window learns your open-eye baseline (12 s)
   → Type what you are working on, pick the kind of work → "Start session" → approve in Windows
   → Work. A FocusGuard window shows what is being monitored; the portal shows "Monitoring: …"
   → "Stop session" in the portal (or Ctrl+C in the FocusGuard window)

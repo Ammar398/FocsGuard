@@ -3,29 +3,45 @@
 /*
  * Design tokens.
  *
- * The palette is defined once here rather than as literal colours scattered
- * through components, because the focus colours carry meaning: the same green
- * must mean "focused" on the ring, the timeline, and the app breakdown, or the
- * dashboard teaches the student nothing.
+ * Defined once, used by role. The data colours carry meaning, so the same blue
+ * means "productive / focused" on the ring, the timeline, the bars and the
+ * tables, or the dashboard teaches nobody anything.
  *
- * Both themes are defined. The viewer's system setting decides.
+ * DATA PALETTE - validated, not eyeballed. Productive/high, mid and
+ * distracting/low were run through the dataviz skill's validator
+ * (scripts/validate_palette.js) against these exact surfaces in both modes:
+ * every check passes, worst colour-blind separation dE 10.2. The previous
+ * emerald-vs-red pair failed it (dE 4.1 for deuteranopia - about 1 man in 12
+ * could not tell "productive" from "distracting"). Blue <-> red is the
+ * validated diverging pair; amber sits between them.
+ *
+ * The brand accent is violet so buttons never read as data.
  */
 @theme {
   --color-ink: #0f172a;
+  --color-ink-soft: #334155;
   --color-muted: #64748b;
   --color-surface: #ffffff;
-  --color-canvas: #f8fafc;
-  --color-line: #e2e8f0;
+  --color-canvas: #f5f6fa;
+  --color-line: #e4e7ee;
+  --color-grid: #eceef3;
 
-  /* Focus bands. Also used for classification: productive / neutral / distracting. */
-  --color-focus-high: #10b981;
-  --color-focus-mid: #f59e0b;
-  --color-focus-low: #ef4444;
-  --color-accent: #4f46e5;
+  --color-focus-high: #2a78d6;
+  --color-focus-mid: #c98500;
+  --color-focus-low: #d03b3b;
+  --color-neutral-data: #9aa1ad;
+
+  --color-accent: #6250d6;
+  --color-accent-soft: #efedfc;
+  --color-good: #0b8a0b;
+
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 4px 16px -6px rgb(15 23 42 / 0.08);
+  --shadow-lift: 0 2px 4px rgb(15 23 42 / 0.05), 0 16px 32px -12px rgb(15 23 42 / 0.18);
 }
 
 :root {
   color-scheme: light dark;
+  --brand-gradient: linear-gradient(135deg, #6250d6 0%, #2a78d6 100%);
 }
 
 /*
@@ -36,17 +52,38 @@
  */
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-ink: #e2e8f0;
+    --color-ink: #e7eaf0;
+    --color-ink-soft: #c8cfdb;
     --color-muted: #94a3b8;
     --color-surface: #1e293b;
-    --color-canvas: #0f172a;
-    --color-line: #334155;
+    --color-canvas: #111827;
+    --color-line: #2f3b50;
+    --color-grid: #283448;
+
+    --color-focus-high: #3987e5;
+    --color-focus-mid: #c98500;
+    --color-focus-low: #d03b3b;
+    --color-neutral-data: #7c8596;
+
+    --color-accent: #9085e9;
+    --color-accent-soft: #2a2752;
+    --color-good: #0ca30c;
+
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -12px rgb(0 0 0 / 0.5);
+    --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.3), 0 20px 40px -16px rgb(0 0 0 / 0.6);
+    --brand-gradient: linear-gradient(135deg, #7b6cf0 0%, #3987e5 100%);
   }
 }
 
 body {
   margin: 0;
   background: var(--color-canvas);
+  background-image: radial-gradient(
+    1200px 400px at 50% -120px,
+    color-mix(in srgb, var(--color-accent) 9%, transparent),
+    transparent 70%
+  );
+  background-repeat: no-repeat;
   color: var(--color-ink);
   font-family:
     ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial,
@@ -147,7 +184,12 @@ body {
     --color-surface: #ffffff;
     --color-canvas: #ffffff;
     --color-line: #cbd5e1;
+    --color-grid: #e2e8f0;
+    --color-focus-high: #2a78d6;
+    --color-accent: #6250d6;
+    --shadow-card: none;
     background: #ffffff;
+    background-image: none;
     color-scheme: light;
   }
 
@@ -157,5 +199,27 @@ body {
 
   @page {
     margin: 14mm;
+  }
+}
+
+/* Entrance animation for cards and panels. Respecting reduced motion. */
+@keyframes fg-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.fg-rise {
+  animation: fg-rise 360ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fg-rise {
+    animation: none;
   }
 }
