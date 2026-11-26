@@ -7,7 +7,7 @@
  */
 
 import { Suspense, lazy } from 'react'
-import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from 'react-router-dom'
 
 import { AuthProvider } from './auth/AuthContext'
 import { useAuth } from './auth/context'
@@ -80,7 +80,12 @@ function Shell() {
   return (
     <div className="min-h-screen">
       <TopBar />
-      <main className={`mx-auto p-4 sm:p-6 ${manager ? 'max-w-6xl' : 'max-w-5xl'}`}>
+      {/* overflow-x-clip: chart tooltips are positioned absolutely and can poke
+          a pixel past the edge, which on a phone makes the whole page wobble
+          sideways. Clip (unlike hidden) creates no scroll container. */}
+      <main
+        className={`mx-auto overflow-x-clip p-4 sm:p-6 ${manager ? 'max-w-6xl' : 'max-w-5xl'}`}
+      >
         <Suspense
           fallback={<p className="p-8 text-[var(--color-muted)]">Loading…</p>}
         >
@@ -111,42 +116,57 @@ function Shell() {
 }
 
 const MANAGER_LINKS = [
+  { to: '/', label: 'Overview' },
   { to: '/employees', label: 'Employees' },
   { to: '/tasks', label: 'Tasks' },
   { to: '/team', label: 'Teams & projects' },
 ]
 
+const STUDENT_LINKS = [
+  { to: '/', label: 'Dashboard' },
+  { to: '/reports', label: 'Reports' },
+]
+
 function TopBar() {
   const { user, signOut } = useAuth()
+  const links = user?.role === 'MANAGER' ? MANAGER_LINKS : STUDENT_LINKS
 
   return (
     <header className="no-print border-b border-[var(--color-line)] bg-[var(--color-surface)]">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 p-4">
-        <nav className="flex flex-wrap items-center gap-5">
-          <Link to="/" className="font-semibold">
-            FocusGuard
-          </Link>
-          {user?.role === 'MANAGER' ? (
-            MANAGER_LINKS.map((link) => (
-              <Link key={link.to} to={link.to} className="text-sm hover:opacity-70">
-                {link.label}
-              </Link>
-            ))
-          ) : (
-            <Link to="/reports" className="text-sm hover:opacity-70">
-              Reports
-            </Link>
-          )}
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3 sm:py-4">
+        <Link to="/" className="order-1 font-semibold">
+          FocusGuard
+        </Link>
+
+        {/* On phones the links take a full-width row of their own and scroll
+            sideways if they must, rather than wrapping into a ragged block. */}
+        <nav className="order-3 -mx-1 flex w-full gap-1 overflow-x-auto sm:order-2 sm:mx-0 sm:w-auto sm:flex-1 sm:gap-4">
+          {links.map((link) => (
+            <NavLink
+              key={link.to}
+              to={link.to}
+              end={link.to === '/'}
+              className={({ isActive }) =>
+                `shrink-0 rounded-md px-2 py-1 text-sm whitespace-nowrap transition ${
+                  isActive
+                    ? 'bg-[var(--color-accent)]/15 font-medium text-[var(--color-accent)]'
+                    : 'text-[var(--color-muted)] hover:text-[var(--color-ink)]'
+                }`
+              }
+            >
+              {link.label}
+            </NavLink>
+          ))}
         </nav>
 
-        <div className="flex items-center gap-4 text-sm">
-          <span className="hidden text-[var(--color-muted)] sm:inline">
+        <div className="order-2 flex items-center gap-3 text-sm sm:order-3">
+          <span className="hidden max-w-48 truncate text-[var(--color-muted)] md:inline">
             {user?.full_name ?? user?.email}
           </span>
           <button
             type="button"
             onClick={() => void signOut()}
-            className="rounded-lg border border-[var(--color-line)] px-3 py-1.5 font-medium hover:border-[var(--color-accent)]"
+            className="rounded-lg border border-[var(--color-line)] px-3 py-1.5 font-medium whitespace-nowrap hover:border-[var(--color-accent)]"
           >
             Sign out
           </button>

@@ -6,22 +6,21 @@ how can I improve?*
 ## The workflow
 
 ```
+Once per computer:  python -m focusguard_agent.helper --install-startup   (see helper.md)
 Register in the portal (or sign in)
-  → Connect a computer: the dashboard issues a one-time token
-      python -m focusguard_agent.tools.enroll --token …        (optional - works offline without it)
-  → Calibrate once
-      python -m focusguard_agent.tools.calibrate
-  → Start a session, naming it and optionally its task and rules
-      python -m focusguard_agent.agent --name "Study Data Structures" --task "Trees" \
-          --task-category STUDY --productive youtube.com docs.python.org --distracting instagram.com
-  → Work. The agent prints what is being monitored and a live status line.
-  → Stop with Ctrl+C or  python -m focusguard_agent.tools.stop
-  → A summary prints immediately; the session uploads and appears in the portal
+  → This computer → "Connect this computer"  → approve the consent notice in Windows
+  → (optional, once) python -m focusguard_agent.tools.calibrate
+  → Type what you are working on, pick the kind of work → "Start session" → approve in Windows
+  → Work. A FocusGuard window shows what is being monitored; the portal shows "Monitoring: …"
+  → "Stop session" in the portal (or Ctrl+C in the FocusGuard window)
+  → The session uploads and appears in the portal within seconds
   → Portal: session timeline (why the score moved), reports, recommendations, CSV / PDF
 ```
 
-A web page cannot start the agent, deliberately: a dashboard that could switch on someone's webcam
-remotely would be a different, worse product.
+The portal never starts the agent by itself: it asks the FocusGuard Helper, and the helper asks the
+person at the computer. A dashboard that could switch on someone's webcam without them would be a
+different, worse product. For per-site rules (`--productive youtube.com --distracting instagram.com`)
+the command line remains available.
 
 ## What a session measures
 

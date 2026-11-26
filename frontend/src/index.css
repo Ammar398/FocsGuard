@@ -28,8 +28,14 @@
   color-scheme: light dark;
 }
 
+/*
+ * Dark palette. Plain custom properties on :root, NOT a nested @theme: Tailwind
+ * 4 hoists every @theme block to the top level regardless of the media query
+ * around it, which made the app dark for everyone. Unlayered :root wins over
+ * the theme layer, so this applies only when the system prefers dark.
+ */
 @media (prefers-color-scheme: dark) {
-  @theme {
+  :root {
     --color-ink: #e2e8f0;
     --color-muted: #94a3b8;
     --color-surface: #1e293b;
@@ -53,6 +59,73 @@ body {
 :focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
+}
+
+/*
+ * Tables become stacked cards on phones.
+ *
+ * A seven-column table on a 375 px screen either overflows the page or makes
+ * the reader scroll sideways through every row. Below 640 px each row is a
+ * card: the first cell is its title, every other cell a labelled line, the
+ * label coming from the cell's data-label attribute. Unlayered on purpose, so
+ * it overrides Tailwind's table utilities without !important.
+ */
+@media (max-width: 639px) {
+  table.rtable,
+  .rtable tbody,
+  .rtable tr,
+  .rtable td {
+    display: block;
+    width: 100%;
+  }
+
+  .rtable thead {
+    display: none;
+  }
+
+  .rtable tr {
+    margin-bottom: 0.75rem;
+    border: 1px solid var(--color-line);
+    border-radius: 0.75rem;
+    padding: 0.75rem 0.875rem;
+  }
+
+  .rtable tr:last-child {
+    margin-bottom: 0;
+  }
+
+  .rtable td {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    border: 0;
+    padding: 0.2rem 0;
+    text-align: right;
+  }
+
+  .rtable td::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    color: var(--color-muted);
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.025em;
+    text-align: left;
+    text-transform: uppercase;
+  }
+
+  .rtable td:first-child {
+    display: block;
+    margin-bottom: 0.35rem;
+    border-bottom: 1px solid var(--color-line);
+    padding-bottom: 0.5rem;
+    text-align: left;
+  }
+
+  .rtable td:first-child::before {
+    content: none;
+  }
 }
 
 /*

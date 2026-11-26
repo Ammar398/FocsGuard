@@ -102,14 +102,21 @@ python -m focusguard_agent.tools.show_token
 Load `browser_extension/dist/chrome` (or `dist/edge`) as an unpacked extension in Developer mode and
 paste the token into its popup.
 
-## 9. Enrol the agent and run it
+## 9. Install the helper, then connect from the portal
 
-Sign in to the portal, create an enrolment token (students: for yourself via the API; managers: on the
-employee's page), then:
+```powershell
+python -m focusguard_agent.helper --install-startup
+```
+
+Then sign in to the portal on that computer and click **Connect this computer**. Windows shows what is
+and is not collected; click **Yes**. From then on, start and stop sessions with the portal's buttons —
+each start is approved on the computer. Details: [helper.md](helper.md).
+
+Command-line alternative (no helper):
 
 ```powershell
 python -m focusguard_agent.tools.enroll --token <token>
-python -m focusguard_agent.agent --name "Study session" --task-category STUDY
+python -m focusguard_agent.agent --name "Study session" --task "Trees" --task-category STUDY
 ```
 
 The agent works without enrolment too — it just keeps everything local.

@@ -136,23 +136,30 @@ export function TeamPage() {
         </Card>
       </div>
 
-      <Card title="Enrolling an employee's computer">
+      <Card title="Connecting an employee's computer">
         <ol className="list-decimal space-y-1 pl-5 text-sm">
-          <li>Open the employee's page and create an enrolment token. It works once, for an hour.</li>
           <li>
-            On their computer, run{' '}
-            <code className="text-xs">python -m focusguard_agent.tools.enroll --token …</code>
+            Give the employee a portal password (on their page, under <em>Manage</em>).
           </li>
-          <li>They read what is and is not collected, and agree. The consent is recorded.</li>
           <li>
-            They list their tasks with{' '}
-            <code className="text-xs">python -m focusguard_agent.tools.tasks</code> and start one with{' '}
-            <code className="text-xs">--assigned-task</code>.
+            On their computer, the FocusGuard Helper is installed once (
+            <code className="text-xs">python -m focusguard_agent.helper --install-startup</code>
+            ). It then starts with Windows.
+          </li>
+          <li>
+            They sign in to the portal and click <strong>Connect this computer</strong>. Windows
+            shows them what is and is not collected; they approve it, and the consent is recorded.
+          </li>
+          <li>
+            Their assigned tasks appear with a <strong>Start</strong> button. Each start is
+            approved on their computer, and a FocusGuard window stays open while it runs.
           </li>
         </ol>
         <p className="mt-3 text-xs text-[var(--color-muted)]">
-          The agent always shows when monitoring is on. It never records screens, page contents,
-          keystrokes or webcam images.
+          Nothing connects a computer or turns a webcam on without the person at that computer
+          agreeing. FocusGuard never records screens, page contents, keystrokes or webcam images.
+          For computers without portal access, an enrolment token can still be created on the
+          employee's page.
         </p>
       </Card>
     </div>

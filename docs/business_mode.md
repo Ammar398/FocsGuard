@@ -12,11 +12,13 @@ similar work?*
 Manager registers an organisation  (POST /auth/register-organization)
   → departments (four starter ones), employees, projects
   → creates a device enrolment token for an employee        (single use, 1 hour)
-Employee runs   tools.enroll --token …                       consent shown → recorded
+Employee signs in on their PC → "Connect this computer"   consent shown in Windows → recorded
+  (or, without portal access: tools.enroll --token … with a token from the manager)
   → manager creates a task: category, priority, deadline, estimate,
     productive / neutral / distracting apps and sites, assignee (with suggestions)
-Employee runs   tools.tasks                                  sees the task AND its rules
-                agent --assigned-task 12                     a TASK SESSION opens
+Employee sees   their tasks in the portal, with each task's rules
+                clicks "Start" → approves in Windows         a TASK SESSION opens
+                (CLI: tools.tasks ; agent --assigned-task 12)
   → the agent classifies activity under the task's rules, scores attention, uploads
   → task moves TODO → IN_PROGRESS on first upload
 Manager sees    task focus, task productivity, events, apps, domains

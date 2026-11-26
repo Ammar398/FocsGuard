@@ -275,6 +275,28 @@ class SyncSettings(BaseModel):
     request_timeout_seconds: float = 15.0
 
 
+class HelperSettings(BaseModel):
+    """The background helper that lets the portal connect and start sessions.
+
+    See `helper/server.py`. Loopback only; only the portal origins listed here
+    may call it, and anything that enrols the machine or turns the webcam on
+    is confirmed in a native Windows dialog on this computer.
+    """
+
+    port: int = 48214
+
+    #: Browser origins allowed to call the helper. Add your deployed portal's
+    #: origin here (comma-separated in .env as a JSON list) when it is not local.
+    allowed_origins: list[str] = Field(
+        default_factory=lambda: [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:4173",
+            "http://127.0.0.1:4173",
+        ]
+    )
+
+
 class AgentSettings(BaseSettings):
     """Root settings object for the desktop agent."""
 
@@ -296,6 +318,7 @@ class AgentSettings(BaseSettings):
     activity: ActivitySettings = Field(default_factory=ActivitySettings)
     privacy: PrivacySettings = Field(default_factory=PrivacySettings)
     sync: SyncSettings = Field(default_factory=SyncSettings)
+    helper: HelperSettings = Field(default_factory=HelperSettings)
 
     #: Forces a specific ONNX Runtime provider, bypassing auto-selection. Used to
     #: verify the CPU fallback path works on a machine that has a GPU.

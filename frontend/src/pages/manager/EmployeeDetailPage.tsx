@@ -125,7 +125,7 @@ export function EmployeeDetailPage() {
           <p className="text-sm text-[var(--color-muted)]">No tasks assigned.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className={tableClass}>
+            <table className={`${tableClass} rtable`}>
               <thead>
                 <tr>
                   <th className={thClass}>Task</th>
@@ -139,7 +139,7 @@ export function EmployeeDetailPage() {
               <tbody>
                 {data.tasks.map((task) => (
                   <tr key={task.id}>
-                    <td className={tdClass}>
+                    <td data-label="" className={tdClass}>
                       <Link to={`/tasks/${task.id}`} className="font-medium hover:text-[var(--color-accent)]">
                         {task.title}
                       </Link>
@@ -147,19 +147,19 @@ export function EmployeeDetailPage() {
                         {categoryLabel(task.category)}
                       </div>
                     </td>
-                    <td className={tdClass}>
+                    <td data-label="Status" className={tdClass}>
                       <StatusPill status={task.status} />
                     </td>
-                    <td className={tdClass}>
+                    <td data-label="Focus" className={tdClass}>
                       <Score value={task.scores.task_focus_score} />
                     </td>
-                    <td className={tdClass}>
+                    <td data-label="Productivity" className={tdClass}>
                       <Score value={task.scores.task_productivity_score} />
                     </td>
-                    <td className={tdClass}>
+                    <td data-label="Rating" className={tdClass}>
                       {task.quality_rating !== null ? `${task.quality_rating}/5` : '—'}
                     </td>
-                    <td className={tdClass}>
+                    <td data-label="On time" className={tdClass}>
                       {task.on_time === null ? '—' : task.on_time ? 'Yes' : 'No'}
                     </td>
                   </tr>
@@ -217,7 +217,7 @@ function StrengthSection({ data }: { data: EmployeeDetail }) {
 
       {report.categories.length > 0 && (
         <div className="overflow-x-auto">
-          <table className={tableClass}>
+          <table className={`${tableClass} rtable`}>
             <thead>
               <tr>
                 <th className={thClass}>Category</th>
@@ -233,24 +233,24 @@ function StrengthSection({ data }: { data: EmployeeDetail }) {
             <tbody>
               {report.categories.map((item) => (
                 <tr key={item.category}>
-                  <td className={tdClass}>{categoryLabel(item.category)}</td>
-                  <td className={tdClass}>{item.completed_tasks}</td>
-                  <td className={tdClass}>
+                  <td data-label="" className={tdClass}>{categoryLabel(item.category)}</td>
+                  <td data-label="Completed" className={tdClass}>{item.completed_tasks}</td>
+                  <td data-label="Score" className={tdClass}>
                     {item.sufficient_data ? (
                       <Score value={item.historical_score} />
                     ) : (
                       <span className="text-xs text-[var(--color-muted)]">insufficient data</span>
                     )}
                   </td>
-                  <td className={tdClass}>
+                  <td data-label="Quality" className={tdClass}>
                     {item.average_quality !== null ? `${item.average_quality.toFixed(1)}/5` : '—'}
                   </td>
-                  <td className={tdClass}>{percent(item.on_time_rate)}</td>
-                  <td className={tdClass}>{percent(item.average_duration_ratio)}</td>
-                  <td className={tdClass}>
+                  <td data-label="On time" className={tdClass}>{percent(item.on_time_rate)}</td>
+                  <td data-label="Time vs estimate" className={tdClass}>{percent(item.average_duration_ratio)}</td>
+                  <td data-label="Focus" className={tdClass}>
                     <Score value={item.average_focus} />
                   </td>
-                  <td className={tdClass}>
+                  <td data-label="Productivity" className={tdClass}>
                     <Score value={item.average_productivity} />
                   </td>
                 </tr>
@@ -328,10 +328,12 @@ function DevicesCard({ data, onChange }: { data: EmployeeDetail; onChange: () =>
         <div className="grow">
           <TextField label="New device name" value={deviceName} onChange={setDeviceName} placeholder="Workstation" />
         </div>
-        <Button variant="primary" onClick={() => void enrol()}>
-          Create enrolment token
-        </Button>
+        <Button onClick={() => void enrol()}>Create enrolment token</Button>
       </div>
+      <p className="no-print mt-2 text-xs text-[var(--color-muted)]">
+        Easier: give the employee a portal password. They sign in on their own computer and click
+        <em> Connect this computer</em>; no token needed.
+      </p>
       <ErrorBanner message={error} />
 
       {token && (

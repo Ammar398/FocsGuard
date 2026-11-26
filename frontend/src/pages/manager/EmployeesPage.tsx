@@ -58,7 +58,7 @@ export function EmployeesPage() {
           <p className="text-sm text-[var(--color-muted)]">No employees yet.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className={tableClass}>
+            <table className={`${tableClass} rtable`}>
               <thead>
                 <tr>
                   <th className={thClass}>Name</th>
@@ -73,7 +73,7 @@ export function EmployeesPage() {
               <tbody>
                 {employees.data.map((employee) => (
                   <tr key={employee.id} className={employee.is_active ? '' : 'opacity-50'}>
-                    <td className={tdClass}>
+                    <td data-label="" className={tdClass}>
                       <Link
                         to={`/employees/${employee.id}`}
                         className="font-medium hover:text-[var(--color-accent)]"
@@ -82,18 +82,18 @@ export function EmployeesPage() {
                       </Link>
                       <div className="text-xs text-[var(--color-muted)]">{employee.email}</div>
                     </td>
-                    <td className={tdClass}>{employee.department_name ?? '—'}</td>
-                    <td className={tdClass}>
+                    <td data-label="Department" className={tdClass}>{employee.department_name ?? '—'}</td>
+                    <td data-label="Status" className={tdClass}>
                       {employee.is_active ? <OnlineDot online={employee.online} /> : 'Deactivated'}
                     </td>
-                    <td className={tdClass}>{employee.open_tasks}</td>
-                    <td className={`${tdClass} tabular-nums`}>
+                    <td data-label="Open tasks" className={tdClass}>{employee.open_tasks}</td>
+                    <td data-label="Today" className={`${tdClass} tabular-nums`}>
                       {formatDuration(employee.today.monitored_seconds)}
                     </td>
-                    <td className={tdClass}>
+                    <td data-label="Focus today" className={tdClass}>
                       <Score value={employee.today.average_focus_score} />
                     </td>
-                    <td className={`${tdClass} text-xs text-[var(--color-muted)]`}>
+                    <td data-label="Portal" className={`${tdClass} text-xs text-[var(--color-muted)]`}>
                       {employee.can_sign_in ? 'Can sign in' : 'Agent only'}
                     </td>
                   </tr>

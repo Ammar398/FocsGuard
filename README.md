@@ -12,7 +12,7 @@ FocusGuard does **not** diagnose ADHD or any medical condition. It reports obser
 evidence behind every observation, and the wording is enforced by tests.
 
 > **Status: all 23 phases implemented.** Student mode (Phases 0–15) and business mode (Phases 16–22)
-> are complete; Phase 23 hardening is done. 665 automated tests. See
+> are complete; Phase 23 hardening is done. 682 automated tests. See
 > [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md) and [CURRENT_STATE.md](CURRENT_STATE.md).
 
 ---
@@ -141,12 +141,18 @@ migrated later.
 | Webcam test | `python -m focusguard_agent.tools.camera_test` |
 | CV debug screen | `python -m focusguard_agent.tools.vision_test` |
 | Calibration | `python -m focusguard_agent.tools.calibrate` |
-| Student session | `python -m focusguard_agent.agent --name "Study Data Structures" --task "Trees" --task-category STUDY` |
-| Enrol a machine | `python -m focusguard_agent.tools.enroll --token <token>` |
-| Employee tasks | `python -m focusguard_agent.tools.tasks` |
-| Work on a task | `python -m focusguard_agent.agent --assigned-task <id>` |
-| Stop the agent | `python -m focusguard_agent.tools.stop` (or Ctrl+C) |
+| **Helper (once per PC)** | `python -m focusguard_agent.helper --install-startup` |
+| Student session (CLI) | `python -m focusguard_agent.agent --name "Study Data Structures" --task "Trees" --task-category STUDY` |
+| Enrol a machine (CLI) | `python -m focusguard_agent.tools.enroll --token <token>` |
+| Employee tasks (CLI) | `python -m focusguard_agent.tools.tasks` |
+| Work on a task (CLI) | `python -m focusguard_agent.agent --assigned-task <id>` |
+| Stop the agent (CLI) | `python -m focusguard_agent.tools.stop` (or Ctrl+C) |
 | Session report | `python -m focusguard_agent.tools.report --session <id>` |
+
+**No terminal needed day to day.** Once the helper is installed on a computer, people sign in to the
+portal and click **Connect this computer**, then **Start session** (students) or **Start** next to an
+assigned task (employees). Each of those asks for permission in a Windows dialog on that computer.
+See [docs/helper.md](docs/helper.md). The CLI rows above remain for scripting and troubleshooting.
 
 If Node is not on `PATH`, the project-local copy is at `.tools\node` (`.tools\node\npm.cmd run dev`).
 
@@ -166,7 +172,7 @@ extension popup. Details: [docs/browser_extension.md](docs/browser_extension.md)
 ## Testing
 
 ```powershell
-pytest                      # 665 tests, ~45 s, no camera / GPU / network needed
+pytest                      # 682 tests, ~70 s, no camera / GPU / network needed
 ruff check .
 cd frontend; npm run lint; npm run build
 ```
@@ -208,6 +214,10 @@ heartbeats after each upload pass (every 30 s) only while it is running and enro
 **`--assigned-task` says the task is not yours.** Only open (to-do / in-progress) tasks assigned to
 the person the machine is enrolled for are visible. List them with `tools.tasks`.
 
+**"The FocusGuard Helper is not running on this computer."** Run
+`python -m focusguard_agent.helper --install-startup` once. If the portal is served from somewhere other
+than `localhost:5173`, add its origin to `FOCUSGUARD_HELPER__ALLOWED_ORIGINS`.
+
 **Import errors for `focusguard_shared`.** Run `pip install -e .` from the repository root.
 
 ---
@@ -244,6 +254,7 @@ manager. Full statement: [docs/privacy.md](docs/privacy.md).
 | [docs/screen_monitoring.md](docs/screen_monitoring.md) | Foreground application tracking |
 | [docs/browser_extension.md](docs/browser_extension.md) | Domain monitoring and URL minimisation |
 | [docs/synchronization.md](docs/synchronization.md) | Offline queue and upload |
+| [docs/helper.md](docs/helper.md) | One-click connect / start from the portal, and why it is safe |
 | [docs/student_mode.md](docs/student_mode.md) | The student workflow end to end |
 | [docs/student_portal.md](docs/student_portal.md) | Portal screens and design choices |
 | [docs/reports_and_recommendations.md](docs/reports_and_recommendations.md) | Reports and the rule engine |

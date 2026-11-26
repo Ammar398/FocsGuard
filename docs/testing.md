@@ -30,6 +30,7 @@ dataclasses. The backend tests use a fresh SQLite file per test through FastAPI'
 | Tenant isolation | `test_backend_isolation`, `test_backend_business` | Every user-reachable route listed and probed from another company |
 | Business logic | `test_business_logic` | Task scores; no score below 3 tasks; no judgemental language across 1,500 fuzzed histories |
 | Business API | `test_backend_business` | The §53 business demo end to end over HTTP |
+| Helper | `test_helper` | Foreign origins / rebound hosts refused before any dialog; "No" changes nothing; argument-list launch |
 | Retention | `test_backend_retention` | Pruning raw rows changes no task score; idempotent; running sessions untouched |
 | Recommendations | `test_recommendations` | Evidence always attached; no clinical wording across 2,000 fuzzed inputs |
 

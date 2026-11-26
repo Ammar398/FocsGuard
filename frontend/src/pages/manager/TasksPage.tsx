@@ -80,7 +80,7 @@ export function TasksPage() {
           <p className="text-sm text-[var(--color-muted)]">No tasks.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className={tableClass}>
+            <table className={`${tableClass} rtable`}>
               <thead>
                 <tr>
                   <th className={thClass}>Task</th>
@@ -94,7 +94,7 @@ export function TasksPage() {
               <tbody>
                 {tasks.data.map((task) => (
                   <tr key={task.id}>
-                    <td className={tdClass}>
+                    <td data-label="" className={tdClass}>
                       <Link to={`/tasks/${task.id}`} className="font-medium hover:text-[var(--color-accent)]">
                         {task.title}
                       </Link>
@@ -103,20 +103,20 @@ export function TasksPage() {
                         {task.project_name ? ` · ${task.project_name}` : ''}
                       </div>
                     </td>
-                    <td className={tdClass}>{task.assignee_name ?? '—'}</td>
-                    <td className={tdClass}>
+                    <td data-label="Assignee" className={tdClass}>{task.assignee_name ?? '—'}</td>
+                    <td data-label="Status" className={tdClass}>
                       <StatusPill status={task.status} />
                     </td>
-                    <td className={`${tdClass} text-xs`}>
+                    <td data-label="Deadline" className={`${tdClass} text-xs`}>
                       {task.deadline ? formatDate(task.deadline) : '—'}
                       {task.on_time === false && (
                         <span className="ml-1 text-[var(--color-focus-low)]">late</span>
                       )}
                     </td>
-                    <td className={tdClass}>
+                    <td data-label="Focus" className={tdClass}>
                       <Score value={task.scores.task_focus_score} />
                     </td>
-                    <td className={tdClass}>
+                    <td data-label="Productivity" className={tdClass}>
                       <Score value={task.scores.task_productivity_score} />
                     </td>
                   </tr>

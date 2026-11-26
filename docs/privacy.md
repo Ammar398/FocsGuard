@@ -41,7 +41,10 @@ student turns them on locally, no manager-facing response includes them.
 * **Employees** see the full collected / not-collected list during enrolment and must type *yes*.
   The acceptance is stored as a `privacy_consents` row with the notice version
   (`CONSENT_VERSION` in `tools/enroll.py`) and shown on their page in the manager portal.
-* Before starting a task, `tools.tasks` shows the employee the task's productive / neutral /
+* Connecting a computer and starting every session from the portal both require **Yes** in a native
+  Windows dialog on that computer (default button: No), so neither a manager nor a compromised portal
+  can enrol a machine or turn a camera on remotely. See [helper.md](helper.md).
+* Before starting a task, the portal (or `tools.tasks`) shows the employee the task's productive / neutral /
   distracting rules — they know what will count before it counts.
 * Employees given a portal password can see their own sessions and reports.
 * Pausing: the agent only monitors while it runs. Organisations decide their own policy on when it

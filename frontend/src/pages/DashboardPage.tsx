@@ -19,13 +19,13 @@
  * one this specification asks for.
  */
 
-import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
-import { ApiError, api } from '../api/client'
+import { api } from '../api/client'
 import type { SessionSummary } from '../api/types'
 import { Card, StatCard } from '../components/StatCard'
 import { FocusRing } from '../components/FocusRing'
+import { ThisComputer } from '../components/ThisComputer'
 import {
   formatDate,
   formatDuration,
@@ -36,14 +36,13 @@ import { usePolling } from '../lib/usePolling'
 
 /** Matched to the agent's upload interval; polling faster learns nothing new. */
 const LIVE_POLL_MS = 15_000
-const IDLE_POLL_MS = 60_000
 
 function isRunning(session: SessionSummary): boolean {
   return session.ended_at === null
 }
 
 export function DashboardPage() {
-  const { data, error, loading } = usePolling<SessionSummary[]>(
+  const { data, error, loading, refresh } = usePolling<SessionSummary[]>(
     () => api.sessions(50),
     // Polls faster while something is live. There is nothing to watch for
     // between sessions, so the idle rate is deliberately slow.
@@ -60,6 +59,8 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <ThisComputer onSessionChange={refresh} />
+
       {error !== null && (
         <p
           role="status"
@@ -87,7 +88,7 @@ export function DashboardPage() {
         )}
       </Card>
 
-      <HowToStart pollSeconds={IDLE_POLL_MS / 1000} />
+      <CommandLine />
     </div>
   )
 }
@@ -204,90 +205,27 @@ function NoSessionsYet() {
     <section className="rounded-xl border border-dashed border-[var(--color-line)] p-10 text-center">
       <h1 className="text-lg font-semibold">No sessions yet</h1>
       <p className="mx-auto mt-2 max-w-md text-sm text-[var(--color-muted)]">
-        Once you enrol this machine and run a session, it appears here. Everything
-        is recorded locally first, so nothing is lost if you work offline.
+        Connect this computer above and start a session; it appears here. Everything
+        is recorded on your computer first, so nothing is lost if you work offline.
       </p>
     </section>
   )
 }
 
-function HowToStart({ pollSeconds }: { pollSeconds: number }) {
-  return (
-    <Card title="Starting a session">
-      <p className="text-sm text-[var(--color-muted)]">
-        Monitoring runs on your machine, and you start it yourself. A web page
-        cannot switch your webcam on, and it should not be able to.
-      </p>
-
-      <pre className="mt-3 overflow-x-auto rounded-lg bg-[var(--color-canvas)] p-3 text-xs">
-        <code>{`# once, to connect this machine
-python -m focusguard_agent.tools.enroll --token <your token>
-
-# then, for each session
-python -m focusguard_agent.agent --name "Study session"
-
-# to stop it
-python -m focusguard_agent.tools.stop`}</code>
-      </pre>
-
-      <ConnectComputer />
-
-      <p className="mt-3 text-xs text-[var(--color-muted)]">
-        This page refreshes on its own roughly every {pollSeconds} seconds.
-      </p>
-    </Card>
-  )
-}
-
 /**
- * Get an enrolment token for one of your own computers (spec section 25).
- *
- * The token is shown once and works once, for an hour - the server keeps only a
- * hash of it. Typing it into the agent is what connects that machine to this
- * account; until then the agent records locally and uploads nothing.
+ * For anyone who prefers a terminal. Collapsed: the panel above does all of
+ * this with buttons, and most people never need it.
  */
-function ConnectComputer() {
-  const [token, setToken] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-
-  async function create() {
-    setBusy(true)
-    setError(null)
-    try {
-      const result = await api.enrolMyDevice('My computer')
-      setToken(result.enrollment_token)
-    } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'Could not create a token.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
+function CommandLine() {
   return (
-    <div className="mt-4">
-      {token === null ? (
-        <button
-          type="button"
-          onClick={() => void create()}
-          disabled={busy}
-          className="rounded-lg border border-[var(--color-line)] px-3 py-1.5 text-sm font-medium hover:border-[var(--color-accent)] disabled:opacity-50"
-        >
-          {busy ? 'Creating…' : 'Connect a computer'}
-        </button>
-      ) : (
-        <div className="rounded-lg border border-[var(--color-accent)]/40 p-3 text-sm">
-          <p className="font-medium">Your token — shown once, valid for one hour</p>
-          <code className="mt-2 block break-all rounded bg-[var(--color-canvas)] p-2 text-xs">
-            python -m focusguard_agent.tools.enroll --token {token}
-          </code>
-        </div>
-      )}
-      {error !== null && (
-        <p role="alert" className="mt-2 text-sm text-[var(--color-focus-low)]">
-          {error}
-        </p>
-      )}
-    </div>
+    <details className="rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-4 text-sm">
+      <summary className="cursor-pointer font-medium text-[var(--color-muted)]">
+        Prefer the command line?
+      </summary>
+      <pre className="mt-3 overflow-x-auto rounded-lg bg-[var(--color-canvas)] p-3 text-xs">
+        <code>{`python -m focusguard_agent.agent --name "Study session"   # start
+python -m focusguard_agent.tools.stop                      # stop`}</code>
+      </pre>
+    </details>
   )
 }

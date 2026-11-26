@@ -132,7 +132,7 @@ export function ManagerDashboardPage() {
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className={tableClass}>
+            <table className={`${tableClass} rtable`}>
               <thead>
                 <tr>
                   <th className={thClass}>Name</th>
@@ -150,7 +150,7 @@ export function ManagerDashboardPage() {
                     today.productive_seconds + today.neutral_seconds + today.distracting_seconds
                   return (
                     <tr key={employee.id}>
-                      <td className={tdClass}>
+                      <td data-label="" className={tdClass}>
                         <Link
                           to={`/employees/${employee.id}`}
                           className="font-medium hover:text-[var(--color-accent)]"
@@ -161,10 +161,10 @@ export function ManagerDashboardPage() {
                           {employee.department_name ?? 'No department'}
                         </div>
                       </td>
-                      <td className={tdClass}>
+                      <td data-label="Status" className={tdClass}>
                         <OnlineDot online={employee.online} />
                       </td>
-                      <td className={tdClass}>
+                      <td data-label="Current task" className={tdClass}>
                         {employee.current_task ? (
                           <Link
                             to={`/tasks/${employee.current_task.id}`}
@@ -176,13 +176,13 @@ export function ManagerDashboardPage() {
                           <span className="text-[var(--color-muted)]">—</span>
                         )}
                       </td>
-                      <td className={`${tdClass} tabular-nums`}>
+                      <td data-label="Today" className={`${tdClass} tabular-nums`}>
                         {formatDuration(today.monitored_seconds)}
                       </td>
-                      <td className={tdClass}>
+                      <td data-label="Focus" className={tdClass}>
                         <Score value={today.average_focus_score} />
                       </td>
-                      <td className={`${tdClass} tabular-nums`}>
+                      <td data-label="Productive" className={`${tdClass} tabular-nums`}>
                         {classified > 0
                           ? `${Math.round((today.productive_seconds / classified) * 100)}%`
                           : '—'}
@@ -243,7 +243,7 @@ export function ManagerDashboardPage() {
       </div>
 
       <Card title="Teams">
-        <table className={tableClass}>
+        <table className={`${tableClass} rtable`}>
           <thead>
             <tr>
               <th className={thClass}>Department</th>
@@ -257,18 +257,18 @@ export function ManagerDashboardPage() {
           <tbody>
             {data.departments.map((department) => (
               <tr key={department.department_id ?? 'none'}>
-                <td className={tdClass}>{department.name}</td>
-                <td className={tdClass}>{department.employees}</td>
-                <td className={`${tdClass} tabular-nums`}>
+                <td data-label="" className={tdClass}>{department.name}</td>
+                <td data-label="People" className={tdClass}>{department.employees}</td>
+                <td data-label="Monitored" className={`${tdClass} tabular-nums`}>
                   {formatDuration(department.monitored_seconds)}
                 </td>
-                <td className={`${tdClass} tabular-nums`}>
+                <td data-label="Productive" className={`${tdClass} tabular-nums`}>
                   {formatDuration(department.productive_seconds)}
                 </td>
-                <td className={`${tdClass} tabular-nums`}>
+                <td data-label="Distracting" className={`${tdClass} tabular-nums`}>
                   {formatDuration(department.distracting_seconds)}
                 </td>
-                <td className={tdClass}>
+                <td data-label="Focus" className={tdClass}>
                   <Score value={department.average_focus_score} />
                 </td>
               </tr>

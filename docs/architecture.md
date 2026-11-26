@@ -25,6 +25,7 @@ user's own machine; the server only ever sees structured events.
 | Component | Path | Responsibility |
 |---|---|---|
 | Desktop agent | `desktop_agent/focusguard_agent` | Capture, vision, activity, events, scoring, local store, sync |
+| Helper | `desktop_agent/focusguard_agent/helper` | Lets the portal connect the PC and start/stop sessions, after a native Windows prompt ([helper.md](helper.md)) |
 | Browser extension | `browser_extension/` | Active-tab domain, minimised in the browser, sent to the agent on 127.0.0.1 |
 | Backend | `backend/focusguard_backend` | Auth, ingest, tenant-scoped reads, analytics, manager API |
 | Portal | `frontend/` | Student dashboard and reports; manager dashboard, employees, tasks |

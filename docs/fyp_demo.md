@@ -15,8 +15,9 @@ python -m focusguard_agent.hardware.detector # terminal 3 - leave the output on 
 
 The seed script's docstring lists the demo accounts; they share the password in `DEMO_PASSWORD`.
 
-Enrol the demo laptop as the student once (dashboard → *Connect a computer* → run the `tools.enroll`
-line it shows), load the browser extension, and open a YouTube entertainment video and a GitHub tab.
+Install the helper once (`python -m focusguard_agent.helper --install-startup`), sign in as the
+student, click **Connect this computer** and approve it. Load the browser extension, and open a YouTube
+entertainment video and a GitHub tab.
 
 ## Part 1 — Hardware and privacy (1 minute)
 
@@ -29,11 +30,11 @@ correctly ignored*. Say: frames never leave the machine; only events do.
 |---|---|---|
 | 1 | Sign in as the student | Week of history, focus ring, recent sessions |
 | 2 | `python -m focusguard_agent.tools.vision_test` | Live EAR, yaw/pitch/roll, gaze with confidence, FPS, CPU, provider |
-| 3 | Start a session: `python -m focusguard_agent.agent --name "Study Data Structures" --task "Trees" --task-category STUDY --distracting youtube.com` | The banner listing exactly what is monitored |
+| 3 | Dashboard → type "Study Data Structures", distracting sites `youtube.com` → **Start session** → **Yes** in the Windows dialog | Permission is asked on the computer; the agent window lists exactly what is monitored; the portal shows *Monitoring: …* |
 | 4 | Look at the screen for 20 s, then away for ~6 s | A short glance is ignored (grace period); the long one becomes GAZE_AWAY and the score eases down, not crashes |
 | 5 | Hold your phone up for ~10 s | One PHONE_VISIBLE event with a confidence, not one per frame |
 | 6 | Switch to the YouTube tab for ~20 s | Distracting under *this task's* rule — YouTube is not bad in general |
-| 7 | Ctrl+C | Summary prints; session uploads |
+| 7 | **Stop session** in the portal | The agent closes cleanly and the session uploads |
 | 8 | Portal → the new session | Timeline with event bands explaining each dip; apps and domains with the rule that classified them |
 | 9 | Reports → This week | Daily bars, recommendations **with their evidence**, *Download CSV*, *Print / Save as PDF* |
 
@@ -48,13 +49,13 @@ Say: *the wording is enforced by a test — no medical or diagnostic language ca
 | 3 | Scroll to *Task-category history* | Comparative statement; score only after 3 completed tasks; the weights are printed |
 | 4 | Tasks → New task, category **Backend** | Suggestions appear instantly, ranked, every reason shown; Usman listed as *not enough history* |
 | 5 | Pick a candidate, add `netflix.com` as distracting, create | The manager decides; nothing is auto-assigned |
-| 6 | On the employee machine: `python -m focusguard_agent.tools.tasks` | The employee sees the task **and its rules** before starting |
-| 7 | `python -m focusguard_agent.agent --assigned-task <id> --seconds 60` | Task session; the task moves to *in progress* |
+| 6 | Sign in as Ayesha (employee) → **Connect this computer** → Yes | Consent shown in Windows and recorded; her open tasks appear **with their rules** |
+| 7 | **Start** next to the new task → Yes; work ~1 minute; **Stop session** | Task session; the task moves to *in progress* |
 | 8 | Task page | Task focus vs task productivity, with the explanation of each number |
 | 9 | *Complete and rate* | Completed, rated tasks are what feed strength analytics |
 
-For step 6–7 the demo laptop must be enrolled **as an employee**: on Ayesha's page create an enrolment
-token, then `tools.enroll --forget` and `tools.enroll --token …`. (Re-enrol as the student afterwards.)
+Steps 6–7 connect the demo laptop to Ayesha's account, replacing the student connection. Before
+repeating the student demo, sign in as the student and click **Connect to my account instead**.
 
 Highlight `Create Landing Page UI` in the seed data: focus 82 but productivity 60 — attention and
 productivity are different things (§59).
