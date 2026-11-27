@@ -58,18 +58,25 @@ copied. On the website:
 
 ## 4. Each monitored computer (employee or student)
 
-Once per computer, in the FocusGuard folder:
+Nobody needs a terminal. After signing in on the computer to monitor:
+
+1. The **This computer** panel says *FocusGuard is not installed on this computer*
+   and shows **Download FocusGuard for Windows**.
+2. Open `FocusGuard-Setup.zip` → **Extract all** → double-click **Install FocusGuard**.
+   It installs Python 3.11 if needed (via winget, for this user only), FocusGuard,
+   the AI models, and starts the Helper now and at every Windows sign-in. The
+   first run takes 5-10 minutes.
+3. The portal notices the Helper by itself; the download disappears and
+   **Connect this computer** takes its place. Approve the Windows dialog, then
+   start a session or an assigned task.
+
+The zip is built by the server (`api/v1/downloads.py`) with **its own address**
+in `server.txt`, so the computer uploads to this server and its Helper trusts
+this website and no other. Developers can do the same by hand:
 
 ```powershell
 python -m focusguard_agent.helper --server https://focusguard-xxxx.onrender.com --install-startup
 ```
-
-* `--server` saves the address in `%LOCALAPPDATA%\FocusGuard\server.env`. The
-  agent uploads there, and the Helper trusts that one website, and no other.
-* `--install-startup` starts the Helper at every Windows sign-in.
-
-Then open the website, sign in, click **Connect this computer**, approve the
-Windows dialog, and start a session or an assigned task.
 
 Chrome may ask once whether the site may **access devices on your local
 network**. Allow it: that is the website talking to the Helper on this same

@@ -14,8 +14,8 @@ logs
 frontend/node_modules
 frontend/dist
 *.onnx
+!desktop_agent/models/yolov8n.onnx
 *.pt
 *.egg-info
-desktop_agent
 browser_extension
 tests

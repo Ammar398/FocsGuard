@@ -30,8 +30,8 @@ import { formatDate } from '../lib/format'
 import {
   IconCamera,
   IconCheck,
+  IconDownload,
   IconLink,
-  IconMonitor,
   IconPlay,
   IconShield,
   IconStop,
@@ -129,7 +129,7 @@ export function ThisComputer({ onSessionChange }: { onSessionChange?: () => void
               {status === undefined
                 ? 'Checking…'
                 : status === null
-                  ? 'FocusGuard Helper not found'
+                  ? 'FocusGuard is not installed on this computer'
                   : running
                     ? 'Monitoring now'
                     : connectedToMe
@@ -558,23 +558,79 @@ function AssignedTasks({ busy, run }: { busy: Busy; run: Run }) {
 
 // --- setup ------------------------------------------------------------------
 
+/** Served by the FocusGuard server, with that server's address built in. */
+const INSTALLER_URL = '/api/v1/downloads/FocusGuard-Setup.zip'
+
 function SetupHelper({ onRetry }: { onRetry: () => void }) {
+  const windows = navigator.userAgent.includes('Windows')
+  const [downloaded, setDownloaded] = useState(false)
+
   return (
     <StepPanel
-      icon={<IconMonitor />}
-      title="Set up the FocusGuard Helper"
-      body="A web page cannot start programs or your webcam by itself - which is how it should be. The Helper is a small background app that does those things on this computer, and only after you approve them here."
+      icon={<IconDownload />}
+      title="Install FocusGuard on this computer"
+      body="FocusGuard analyses your camera on your own computer, so video never leaves it. A website cannot do that by itself, so this computer needs the FocusGuard app once. After that, everything starts from this page."
     >
-      <div className="space-y-3 text-sm">
-        <p className="text-[var(--color-muted)]">
-          One-time setup: run this once in the FocusGuard folder. It also starts the Helper
-          whenever you sign in to Windows.
+      {windows ? (
+        <div className="space-y-4 text-sm">
+          <div className="flex flex-wrap items-center gap-3">
+            <a
+              href={INSTALLER_URL}
+              download
+              onClick={() => setDownloaded(true)}
+              className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold whitespace-nowrap text-[var(--color-on-accent)] shadow-[var(--shadow-card)] transition hover:brightness-110"
+              style={{ background: 'var(--brand-gradient)' }}
+            >
+              <IconDownload size={18} />
+              Download FocusGuard for Windows
+            </a>
+            <span className="text-xs text-[var(--color-muted)]">about 12 MB</span>
+          </div>
+
+          <ol className="space-y-2">
+            {[
+              'Open the downloaded FocusGuard-Setup.zip and choose Extract all.',
+              'In the extracted folder, double-click "Install FocusGuard". The first time takes 5 to 10 minutes.',
+              'When it says "FocusGuard is ready", come back here. This page notices by itself.',
+            ].map((text, index) => (
+              <li key={text} className="flex gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-accent-soft)] text-xs font-semibold text-[var(--color-accent)]">
+                  {index + 1}
+                </span>
+                <span className="pt-0.5 leading-relaxed">{text}</span>
+              </li>
+            ))}
+          </ol>
+
+          {downloaded && (
+            <p className="flex items-center gap-2 rounded-xl bg-[var(--color-accent-soft)] px-3 py-2 text-xs">
+              <Pulse />
+              Waiting for FocusGuard to start on this computer…
+            </p>
+          )}
+
+          <p className="text-xs text-[var(--color-muted)]">
+            Windows may warn that the file comes from the internet. Choose More info, then Run anyway.
+            Nothing turns your camera on without your approval in a Windows dialog.
+          </p>
+
+          <details className="text-xs text-[var(--color-muted)]">
+            <summary className="cursor-pointer">Already installed?</summary>
+            <p className="mt-2">
+              FocusGuard starts by itself when you sign in to Windows. If it is not running, open
+              the FocusGuard folder and double-click "Install FocusGuard" again, then:
+            </p>
+            <div className="mt-2">
+              <SecondaryButton onClick={onRetry}>Check again</SecondaryButton>
+            </div>
+          </details>
+        </div>
+      ) : (
+        <p className="text-sm text-[var(--color-muted)]">
+          FocusGuard monitoring runs on Windows. Open this page on the Windows computer you want
+          to monitor to download it. Your reports work on any device.
         </p>
-        <code className="block overflow-x-auto rounded-xl bg-[var(--color-canvas)] px-4 py-3 text-xs whitespace-nowrap">
-          python -m focusguard_agent.helper --install-startup
-        </code>
-        <SecondaryButton onClick={onRetry}>Check again</SecondaryButton>
-      </div>
+      )}
     </StepPanel>
   )
 }

@@ -39,6 +39,12 @@ export const IconCamera = (p: IconProps) => (
   </Icon>
 )
 
+export const IconDownload = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14" />
+  </Icon>
+)
+
 export const IconMonitor = (p: IconProps) => (
   <Icon {...p}>
     <rect x="3" y="4" width="18" height="12" rx="2" />

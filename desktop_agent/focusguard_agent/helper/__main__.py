@@ -60,6 +60,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--remove-startup", action="store_true")
     parser.add_argument("--server", metavar="URL",
                         help="the address of your FocusGuard website, e.g. https://x.onrender.com")
+    parser.add_argument("--setup-only", action="store_true",
+                        help="apply --server/--install-startup and exit without running")
     args = parser.parse_args(argv)
 
     if args.server:
@@ -82,6 +84,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.install_startup:
         print(f"The helper will start when you sign in to Windows ({install_startup()}).")
+
+    if args.setup_only:
+        return 0
 
     configure_logging(level="INFO")
     helper = FocusGuardHelper()

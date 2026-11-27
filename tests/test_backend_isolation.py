@@ -469,8 +469,11 @@ def test_every_org_scoped_route_is_covered_here(two_company_api) -> None:
         path
         for path in spec["paths"]
         # /auth is about the caller themselves and /agent takes a device
-        # credential, neither of which is organisation-scoped.
-        if path.startswith("/api/v1/") and not path.startswith(("/api/v1/auth", "/api/v1/agent"))
+        # credential, neither of which is organisation-scoped. /downloads is the
+        # public Windows installer: the same for everybody, no account data
+        # (tests/test_installer_download.py checks what it contains).
+        if path.startswith("/api/v1/")
+        and not path.startswith(("/api/v1/auth", "/api/v1/agent", "/api/v1/downloads"))
     }
     covered = {
         "/api/v1/sessions",

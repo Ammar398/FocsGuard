@@ -37,6 +37,7 @@ from focusguard_backend.api.v1 import (
     agent,
     auth,
     devices,
+    downloads,
     manager,
     organizations,
     reports,
@@ -102,6 +103,7 @@ app.include_router(agent.router, prefix=API_PREFIX)
 app.include_router(sessions.router, prefix=API_PREFIX)
 app.include_router(reports.router, prefix=API_PREFIX)
 app.include_router(manager.router, prefix=API_PREFIX)
+app.include_router(downloads.router, prefix=API_PREFIX)
 
 
 @app.get("/health", response_model=HealthResponse, tags=["system"])

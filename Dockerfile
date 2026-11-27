@@ -20,7 +20,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PYTHONPATH=/app/shared:/app/backend \
-    FOCUSGUARD_PORTAL_DIR=/app/frontend/dist
+    FOCUSGUARD_PORTAL_DIR=/app/frontend/dist \
+    FOCUSGUARD_AGENT_SOURCE=/app
 WORKDIR /app
 
 COPY requirements/base.txt requirements/backend.txt requirements/
@@ -28,6 +29,9 @@ RUN pip install -r requirements/backend.txt
 
 COPY shared/ shared/
 COPY backend/ backend/
+# Not run here: packed into the "Download FocusGuard" installer (api/v1/downloads.py).
+COPY requirements/agent.txt requirements/
+COPY desktop_agent/ desktop_agent/
 COPY --from=portal /app/frontend/dist frontend/dist
 
 # Never run a web server as root.
