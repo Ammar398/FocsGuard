@@ -176,6 +176,9 @@ def window_stats(entry: EmployeeWindowStats | None) -> WindowStats:
         phone_seconds=entry.event_seconds.get("PHONE_VISIBLE", 0.0),
         looking_away_seconds=entry.event_seconds.get("GAZE_AWAY", 0.0),
         face_absent_seconds=entry.event_seconds.get("FACE_ABSENT", 0.0),
+        eyes_closed_seconds=entry.event_seconds.get("EYES_CLOSED", 0.0),
+        head_down_seconds=entry.event_seconds.get("HEAD_DOWN", 0.0),
+        multiple_faces_seconds=entry.event_seconds.get("MULTIPLE_FACES", 0.0),
         drowsiness_events=entry.event_counts.get("DROWSINESS", 0),
     )
 
@@ -1089,6 +1092,10 @@ def export_employees(
                 "digital_productivity_score": _round(entry.digital_productivity_score),
                 "phone_minutes": _minutes(entry.phone_seconds),
                 "looking_away_minutes": _minutes(entry.looking_away_seconds),
+                "away_from_desk_minutes": _minutes(entry.face_absent_seconds),
+                "eyes_closed_minutes": _minutes(entry.eyes_closed_seconds),
+                "head_down_minutes": _minutes(entry.head_down_seconds),
+                "someone_else_in_frame_minutes": _minutes(entry.multiple_faces_seconds),
                 "drowsiness_events": entry.drowsiness_events,
                 "open_tasks": open_counts.get(user.id, 0),
                 "completed_tasks": sum(1 for t in completed if t.assignee_id == user.id),

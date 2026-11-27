@@ -327,3 +327,13 @@ def test_without_smtp_the_email_is_written_to_the_outbox(tmp_path):
     assert len(files) == 1
     body = files[0].read_text(encoding="utf-8")
     assert "123 456" in body and "a@b.example.com" in body
+
+
+def test_switching_verification_off_unlocks_accounts_still_waiting_for_a_code(
+    client, mailer, monkeypatch
+):
+    register(client)  # signed up while verification was on; never entered the code
+    assert login(client).status_code == 403
+
+    monkeypatch.setenv("FOCUSGUARD_REQUIRE_EMAIL_VERIFICATION", "0")
+    assert login(client).status_code == 200

@@ -49,6 +49,7 @@ export function ThisComputer({ onSessionChange }: { onSessionChange?: () => void
   const [busy, setBusy] = useState<Busy>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [download, setDownload] = useState<{ url: string; app: string } | null>(null)
   const [skippedCamera, setSkippedCamera] = useState(
     () => localStorage.getItem(SKIP_CAMERA_KEY) === '1',
   )
@@ -79,12 +80,19 @@ export function ThisComputer({ onSessionChange }: { onSessionChange?: () => void
     setBusy(kind)
     setError(null)
     setNotice(null)
+    setDownload(null)
     try {
       setNotice(await action())
     } catch (caught) {
       if (caught instanceof HelperError && caught.declined) {
         setNotice('Nothing changed - it was declined on the computer.')
       } else {
+        if (caught instanceof HelperError && caught.camera?.download_url) {
+          setDownload({
+            url: caught.camera.download_url,
+            app: caught.camera.app ?? 'the camera app',
+          })
+        }
         setError(
           caught instanceof HelperError || caught instanceof ApiError
             ? caught.message
@@ -254,11 +262,39 @@ export function ThisComputer({ onSessionChange }: { onSessionChange?: () => void
 
         {notice && <p className="mt-4 text-sm text-[var(--color-good)]">{notice}</p>}
         {error && (
-          <p
+          <div
             role="alert"
             className="mt-4 rounded-xl bg-[var(--color-focus-low)]/10 px-3 py-2 text-sm text-[var(--color-focus-low)]"
           >
             {error}
+            {download && (
+              <a
+                href={download.url}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-2 block w-fit rounded-lg bg-[var(--color-accent)] px-3 py-1.5 font-semibold text-[var(--color-on-accent)]"
+              >
+                Download {download.app}
+              </a>
+            )}
+          </div>
+        )}
+
+        {status && connectedToMe && status.camera_always_allowed && (
+          <p className="mt-4 flex flex-wrap items-center gap-x-2 text-xs text-[var(--color-muted)]">
+            Sessions on this computer start without asking first. You chose this on the computer.
+            <button
+              type="button"
+              onClick={() =>
+                void run(null, async () => {
+                  await localHelper.askEveryTime()
+                  return 'This computer will ask before every session again.'
+                })
+              }
+              className="font-medium text-[var(--color-accent)] hover:underline"
+            >
+              Ask every time
+            </button>
           </p>
         )}
       </div>
@@ -403,7 +439,7 @@ function StartStudySession({ busy, run }: { busy: Busy; run: Run }) {
     event.preventDefault()
     void run('starting', async () => {
       const sessionName = name.trim() || 'Study session'
-      await localHelper.start({
+      const result = await localHelper.start({
         name: sessionName,
         task: sessionName,
         task_category: category,
@@ -412,7 +448,8 @@ function StartStudySession({ busy, run }: { busy: Busy; run: Run }) {
           .map((item) => item.trim())
           .filter(Boolean),
       })
-      return 'Started. A live analysis window opened on your computer; the session runs until you close it or press Stop here.'
+      const opened = result.camera?.opened_app ? `${result.camera.message} ` : ''
+      return `${opened}Started. A live analysis window opened on your computer; the session runs until you close it or press Stop here.`
     })
   }
 

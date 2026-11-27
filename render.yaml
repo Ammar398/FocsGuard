@@ -1,0 +1,29 @@
+# Render Blueprint: one click creates the database and the website.
+# Render dashboard -> New -> Blueprint -> pick this repository.
+# See docs/deploy.md.
+
+databases:
+  - name: focusguard-db
+    plan: free
+    databaseName: focusguard
+    user: focusguard
+
+services:
+  - type: web
+    name: focusguard
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: focusguard-db
+          property: connectionString
+      # Signs every sign-in token. Generated once by Render, never in the repo.
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      # Email codes are off until SMTP is set up (docs/deploy.md, step 6).
+      - key: FOCUSGUARD_REQUIRE_EMAIL_VERIFICATION
+        value: "0"
+      - key: FOCUSGUARD_LOG_LEVEL
+        value: INFO

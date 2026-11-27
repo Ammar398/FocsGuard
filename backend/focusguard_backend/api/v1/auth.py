@@ -213,7 +213,9 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
         # still information about whether it exists.
         raise _BAD_CREDENTIALS
 
-    if not user.email_verified:
+    # With verification switched off, accounts that signed up while it was on
+    # (and never entered their code) must not stay locked out.
+    if not user.email_verified and verification_required():
         # Only reachable with the right password, so saying so leaks nothing.
         # A fresh code is sent (rate-limited) so the person can finish now.
         issue_and_send(db, user, VERIFY_EMAIL)

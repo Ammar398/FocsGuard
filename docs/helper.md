@@ -73,3 +73,25 @@ passed as inert text; and that only one session can run.
 Everything still works from a terminal: `tools.enroll --token`, `agent --name …`,
 `agent --assigned-task N`, `tools.stop`. The student dashboard keeps these under *Prefer the command
 line?*, and managers can still create an enrolment token on an employee's page.
+
+## Camera readiness
+
+Before the camera is turned on (a session or the camera check), the Helper checks that a camera will
+actually send video (`capture/camera_apps.py`). Phone-camera apps install a virtual camera that Windows
+lists even while the app is closed, so the device list alone is not enough:
+
+| Situation | What happens |
+|---|---|
+| No camera at all | Refused, with links to Camo / DroidCam |
+| A real webcam | Ready |
+| Camo / DroidCam, app open | Ready |
+| Camo / DroidCam, app closed | The app is opened (as the Start menu would) and the session continues; the live window says "Waiting for Camo..." until video arrives |
+| Camo / DroidCam not installed | Refused, and the portal shows a **Download** button |
+
+## "Always allow on this computer"
+
+Turning the camera on asks with three buttons: **Start once**, **Always allow on this computer**,
+**Cancel** (focused by default). "Always allow" is saved in `helper_prefs.json` on the computer and can
+only be granted in that dialog. The portal can only switch it off again (**Ask every time**). The
+monitoring window is still always visible, and connecting the computer to an account still asks every
+time.

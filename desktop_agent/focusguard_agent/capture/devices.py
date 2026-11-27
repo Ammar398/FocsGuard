@@ -319,14 +319,22 @@ def find_device(name_fragment: str | None, fallback_index: int = 0) -> CaptureDe
 
         available = ", ".join(device.name for device in devices)
         logger.warning(
-            "Camera %r not found; falling back to index %d. Available: %s",
+            "Camera %r not found; choosing automatically. Available: %s",
             name_fragment,
-            fallback_index,
             available,
         )
+
+    # Automatic choice: a real webcam first, a phone-camera app only when there
+    # is none. The readiness check uses the same rule (capture/camera_apps).
+    from focusguard_agent.capture.camera_apps import choose_camera, running_processes
+
+    chosen = choose_camera([device.name for device in devices], None, running_processes())
+    for device in devices:
+        if device.name == chosen:
+            logger.info("Camera chosen automatically: %s", device)
+            return device
 
     for device in devices:
         if device.index == fallback_index:
             return device
-
     return devices[0]

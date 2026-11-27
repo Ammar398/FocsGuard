@@ -164,7 +164,22 @@ def _upload(client, agent, *, task_id=None, minutes=60, score=80.0, productive=4
                 "end_time": (started + timedelta(seconds=30)).isoformat(),
                 "duration_seconds": 30.0,
                 "confidence": 0.87,
-            }
+            },
+            *[
+                {
+                    "event_uuid": f"{prefix}-v{index}",
+                    "event_type": kind,
+                    "start_time": (started + timedelta(seconds=60 * index)).isoformat(),
+                    "end_time": (started + timedelta(seconds=60 * index + seconds)).isoformat(),
+                    "duration_seconds": float(seconds),
+                    "confidence": 0.8,
+                }
+                for index, (kind, seconds) in enumerate(
+                    [("EYES_CLOSED", 4), ("HEAD_DOWN", 12), ("MULTIPLE_FACES", 6),
+                     ("FACE_ABSENT", 20)],
+                    start=1,
+                )
+            ],
         ],
         "activity_events": [
             span(0, "Visual Studio Code", None, "PRODUCTIVE", productive),
@@ -336,7 +351,9 @@ def test_a_task_session_produces_task_scores_and_moves_the_task_in_progress(clie
     assert scores["task_focus_score"] == pytest.approx(80.0)
     assert scores["task_productivity_score"] == pytest.approx(100 * 40 / 50)
     assert scores["duration_ratio"] == pytest.approx(1.0)
-    assert detail["event_counts"] == {"PHONE_VISIBLE": 1}
+    assert detail["event_counts"] == {
+        "PHONE_VISIBLE": 1, "EYES_CLOSED": 1, "HEAD_DOWN": 1, "MULTIPLE_FACES": 1, "FACE_ABSENT": 1,
+    }
     assert detail["top_domains"][0] == {
         "label": "netflix.com",
         "seconds": 600.0,
@@ -450,6 +467,11 @@ def test_the_dashboard_reports_online_staff_usage_and_departments(client):
     assert board["totals"]["productive_seconds"] == 40 * 60
     assert board["totals"]["distracting_seconds"] == 10 * 60
     assert board["totals"]["phone_seconds"] == 30
+    # Every camera signal the student sees reaches the manager too.
+    assert board["totals"]["eyes_closed_seconds"] == 4
+    assert board["totals"]["head_down_seconds"] == 12
+    assert board["totals"]["multiple_faces_seconds"] == 6
+    assert board["totals"]["face_absent_seconds"] == 20
     assert board["top_applications"][0]["label"] == "Visual Studio Code"
     assert board["top_domains"][0]["label"] == "netflix.com"
 

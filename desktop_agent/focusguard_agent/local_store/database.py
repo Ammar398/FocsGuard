@@ -270,6 +270,69 @@ class LocalStore:
                 ((ended_at or datetime.now(UTC)).isoformat(), session_id),
             )
 
+    def close_orphaned_sessions(self, keep_open: int | None = None) -> int:
+        """End sessions that never ended, at the last moment they recorded.
+
+        An agent that is killed - power cut, Task Manager, a crash - leaves its
+        session with no end time. Totals are only computed at the end, so such
+        a session would read 0 s for ever, and the portal would show it as
+        still running. Closing it at its last recorded event or score gives it
+        its real length and lets its totals upload. `keep_open` is the session
+        that is genuinely running now.
+        """
+        closed = 0
+        with self._cursor() as cursor:
+            cursor.execute(
+                "SELECT id, started_at FROM sessions WHERE ended_at IS NULL AND id IS NOT ?",
+                (keep_open,),
+            )
+            for session_id, started_at in cursor.fetchall():
+                last = started_at
+                for query in (
+                    "SELECT MAX(recorded_at) FROM focus_scores WHERE session_id = ?",
+                    "SELECT MAX(end_time) FROM vision_events WHERE session_id = ?",
+                    "SELECT MAX(end_time) FROM activity_events WHERE session_id = ?",
+                ):
+                    value = cursor.execute(query, (session_id,)).fetchone()[0]
+                    if value and value > last:
+                        last = value
+                # Re-queued so the session's totals go up with its end time.
+                cursor.execute(
+                    "UPDATE sessions SET ended_at = ?, sync_status = ? "
+                    "WHERE id = ? AND sync_status != ?",
+                    (last, SyncStatus.PENDING.value, session_id, SyncStatus.LOCAL_ONLY.value),
+                )
+                cursor.execute(
+                    "UPDATE sessions SET ended_at = ? WHERE id = ? AND ended_at IS NULL",
+                    (last, session_id),
+                )
+                closed += 1
+        if closed:
+            logger.info("Closed %d session(s) left open by an earlier agent", closed)
+        return closed
+
+    def keep_unsynced_local(self) -> int:
+        """Stop everything not yet uploaded from ever being uploaded.
+
+        Called when this computer moves to a different account: what was
+        recorded before the move belongs to whoever used it then, not to the
+        account it is moving to. Nothing is deleted - it stays on the computer.
+        """
+        with self._cursor() as cursor:
+            cursor.execute(
+                "UPDATE sessions SET sync_status = ? WHERE sync_status != ?",
+                (SyncStatus.LOCAL_ONLY.value, SyncStatus.SYNCED.value),
+            )
+            held = cursor.rowcount
+            for table in ("vision_events", "activity_events", "focus_scores"):
+                cursor.execute(
+                    f"UPDATE {table} SET sync_status = ? WHERE sync_status != ?",  # noqa: S608
+                    (SyncStatus.LOCAL_ONLY.value, SyncStatus.SYNCED.value),
+                )
+        if held:
+            logger.info("Kept %d unsent session(s) on this computer after an account move", held)
+        return held
+
     def get_session(self, session_id: int) -> sqlite3.Row | None:
         with self._cursor() as cursor:
             cursor.execute("SELECT * FROM sessions WHERE id = ?", (session_id,))

@@ -18,6 +18,8 @@ export interface HelperStatus {
   organization_id: number | null
   backend_url: string
   session: { running: boolean; name: string | null }
+  /** Set only in the on-computer dialog ("Always allow on this computer"). */
+  camera_always_allowed: boolean
   camera: {
     device_name: string | null
     check_running: boolean
@@ -39,13 +41,28 @@ export interface AssignedTask {
   distracting_rules: string[]
 }
 
+/** Whether a camera will actually send video (see capture/camera_apps.py). */
+export interface CameraReadiness {
+  ready: boolean
+  message: string
+  device: string | null
+  app: string | null
+  app_running: boolean | null
+  app_installed: boolean | null
+  opened_app: boolean
+  download_url: string | null
+}
+
 export class HelperError extends Error {
   readonly status: number
+  /** Present when the camera is missing: what to install, and where. */
+  readonly camera: CameraReadiness | null
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, camera: CameraReadiness | null = null) {
     super(message)
     this.name = 'HelperError'
     this.status = status
+    this.camera = camera
   }
 
   /** The person at the computer clicked "No". */
@@ -72,7 +89,11 @@ async function call<T>(path: string, init: RequestInit = {}, timeoutMs?: number)
 
   const body = await response.json().catch(() => ({}))
   if (!response.ok) {
-    throw new HelperError(response.status, body?.error ?? `Helper error (${response.status})`)
+    throw new HelperError(
+      response.status,
+      body?.error ?? `Helper error (${response.status})`,
+      body?.camera ?? null,
+    )
   }
   return body as T
 }
@@ -101,12 +122,23 @@ export const localHelper = {
     task_category?: string
     distracting?: string[]
     assigned_task_id?: number
-  }) => call<{ ok: boolean; name: string }>('/sessions/start', {
+  }) => call<{ ok: boolean; name: string; camera?: CameraReadiness }>('/sessions/start', {
     method: 'POST',
     body: JSON.stringify(body),
   }),
 
-  cameraCheck: () => call<{ ok: boolean }>('/camera/check', { method: 'POST', body: '{}' }),
+  cameraCheck: () =>
+    call<{ ok: boolean; camera?: CameraReadiness }>('/camera/check', {
+      method: 'POST',
+      body: '{}',
+    }),
+
+  /** Go back to asking before every session. Turning it on is only possible on the computer. */
+  askEveryTime: () =>
+    call<{ ok: boolean }>('/prefs', {
+      method: 'POST',
+      body: JSON.stringify({ ask_every_time: true }),
+    }),
 
   stop: () => call<{ ok: boolean }>('/sessions/stop', { method: 'POST', body: '{}' }, 10_000),
 }

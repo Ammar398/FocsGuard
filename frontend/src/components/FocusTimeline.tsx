@@ -92,6 +92,8 @@ export function FocusTimeline({ scores, events }: FocusTimelineProps) {
     [events],
   )
 
+  const spanMs = points.length > 1 ? points[points.length - 1].t - points[0].t : 0
+
   if (points.length === 0) {
     return (
       <p className="py-12 text-center text-sm text-[var(--color-muted)]">
@@ -125,7 +127,10 @@ export function FocusTimeline({ scores, events }: FocusTimelineProps) {
               type="number"
               domain={['dataMin', 'dataMax']}
               scale="time"
-              tickFormatter={(value: number) => formatClock(new Date(value).toISOString())}
+              // Short sessions need seconds, or every tick reads the same minute.
+              tickFormatter={(value: number) =>
+                formatClock(new Date(value).toISOString(), spanMs < 15 * 60 * 1000)
+              }
               stroke="var(--color-muted)"
               fontSize={12}
               minTickGap={40}

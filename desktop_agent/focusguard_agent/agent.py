@@ -339,6 +339,10 @@ class FocusGuardAgent:
 
         print(self.banner())
 
+        # Sessions an earlier, killed agent never closed get their real end
+        # time now, so they stop reading 0 s and "still running".
+        self.store.close_orphaned_sessions()
+
         started_wall = datetime.now(UTC)
         started_monotonic = time.monotonic()
         self._clock = SessionClock(started_wall, started_monotonic)

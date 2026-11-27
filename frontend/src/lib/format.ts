@@ -6,6 +6,21 @@
  * sees "1h 5m" in one place and "65 min" in another stops trusting either.
  */
 
+/**
+ * Whether a session is actually running now.
+ *
+ * "No end time" alone is not enough: an agent that was killed (power cut, Task
+ * Manager) never writes one, and its session would read as live for ever. The
+ * agent closes such sessions the next time it starts; until then, anything
+ * unfinished that started more than 12 hours ago is treated as interrupted.
+ */
+export const LIVE_WINDOW_HOURS = 12
+
+export function isLiveSession(session: { ended_at: string | null; started_at: string }): boolean {
+  if (session.ended_at !== null) return false
+  return Date.now() - new Date(session.started_at).getTime() < LIVE_WINDOW_HOURS * 3600 * 1000
+}
+
 /** "1h 05m", "7m 30s", "12s". Never "0.11666 hours". */
 export function formatDuration(seconds: number): string {
   const total = Math.max(0, Math.round(seconds))
@@ -22,10 +37,11 @@ export function formatDuration(seconds: number): string {
   return `${hours}h ${String(minutes % 60).padStart(2, '0')}m`
 }
 
-export function formatClock(iso: string): string {
+export function formatClock(iso: string, withSeconds = false): string {
   return new Date(iso).toLocaleTimeString(undefined, {
     hour: '2-digit',
     minute: '2-digit',
+    ...(withSeconds ? { second: '2-digit' } : {}),
   })
 }
 

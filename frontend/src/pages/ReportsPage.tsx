@@ -173,7 +173,9 @@ function DailyChart({ daily }: { daily: DayTotals[] }) {
             tick={{ fontSize: 12, fill: 'var(--color-muted)' }}
             axisLine={false}
             tickLine={false}
-            tickFormatter={(value: number) => `${Math.round(value)}m`}
+            // Whole minutes only: fractional ticks rounded to "1m, 1m, 0m" repeat.
+            allowDecimals={false}
+            tickFormatter={(value: number) => `${value}m`}
           />
           <Tooltip content={<DayTooltip />} cursor={{ fill: 'var(--color-grid)', opacity: 0.6 }} />
           {/* One series, one colour. The day's focus score is in the tooltip and

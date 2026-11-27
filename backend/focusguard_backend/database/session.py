@@ -38,10 +38,23 @@ def database_url() -> str:
     """Resolve the database URL from the environment, defaulting to SQLite."""
     url = os.environ.get("DATABASE_URL")
     if url:
-        return url
+        return normalise_url(url)
 
     path = Path(os.environ.get("FOCUSGUARD_BACKEND_DB", "focusguard_backend.db"))
     return f"sqlite:///{path.resolve()}"
+
+
+def normalise_url(url: str) -> str:
+    """Point a hosted Postgres URL at the psycopg 3 driver.
+
+    Hosts such as Render hand out `postgres://...` or `postgresql://...`.
+    SQLAlchemy reads both as "use psycopg2", which is not installed - psycopg 3
+    is. Any other URL (SQLite, or one that already names a driver) is unchanged.
+    """
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix):]
+    return url
 
 
 def _configure_sqlite(dbapi_connection, _record) -> None:

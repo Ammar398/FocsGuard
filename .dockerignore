@@ -1,0 +1,21 @@
+# Keep the build small and secrets out of the image.
+.git
+.venv
+.tools
+.env
+*.env
+**/__pycache__
+**/*.pyc
+*.db
+*.db-wal
+*.db-shm
+dev_outbox
+logs
+frontend/node_modules
+frontend/dist
+*.onnx
+*.pt
+*.egg-info
+desktop_agent
+browser_extension
+tests

@@ -26,9 +26,11 @@ from __future__ import annotations
 
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from focusguard_backend.api.v1 import (
     account,
@@ -108,6 +110,34 @@ def health() -> HealthResponse:
     return HealthResponse(
         status="ok", version=VERSION, database=database_url().split("://", 1)[0]
     )
+
+
+# --- the portal, when deployed -------------------------------------------------
+#
+# In production the built portal (frontend/dist) is served by this same app, so
+# the website and its API share one address. That keeps the browser on a single
+# origin (no CORS, no cross-site cookies) and lets the desktop Helper trust
+# exactly one site: the server it uploads to. In development Vite serves the
+# portal instead and this directory does not exist, so nothing is mounted.
+
+_DEFAULT_PORTAL = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+PORTAL_DIR = Path(os.environ.get("FOCUSGUARD_PORTAL_DIR", _DEFAULT_PORTAL)).resolve()
+
+if (PORTAL_DIR / "index.html").is_file():
+
+    @app.get("/{path:path}", include_in_schema=False)
+    def portal(path: str) -> FileResponse:
+        """A real file if there is one, otherwise the app (client-side routes)."""
+        if path.startswith(("api/", "docs", "openapi.json", "redoc")):
+            raise HTTPException(status_code=404, detail="Not Found")
+        candidate = (PORTAL_DIR / path).resolve()
+        # resolve() + is_relative_to: "../../etc/passwd" cannot leave the folder.
+        if path and candidate.is_relative_to(PORTAL_DIR) and candidate.is_file():
+            # Vite fingerprints everything under assets/, so it can be cached forever.
+            forever = path.startswith("assets/")
+            cache = "public, max-age=31536000, immutable" if forever else "no-cache"
+            return FileResponse(candidate, headers={"Cache-Control": cache})
+        return FileResponse(PORTAL_DIR / "index.html", headers={"Cache-Control": "no-cache"})
 
 
 def main() -> int:

@@ -19,6 +19,13 @@ The helper never opens the camera and never monitors anything. It only:
     POST /sessions/start  start the monitoring agent in its own window     -> asks first
     POST /sessions/stop   ask the running agent to stop cleanly
     POST /camera/check    open the camera preview + personal calibration     -> asks first
+    POST /prefs           turn "always allow" off again (never on - only the dialog can)
+
+Turning the camera on (a session or the camera check) asks with three choices:
+Start once, Always allow on this computer, or Cancel. "Always allow" is stored
+on the computer and can only be granted in that dialog, by the person at the
+computer; the portal can only take it away. Connecting the computer to an
+account always asks, every time.
 
 SECURITY
 --------
@@ -52,6 +59,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 from focusguard_agent.calibration.ear_calibration import load_profile
+from focusguard_agent.capture.camera_apps import CameraReadiness, check_camera
 from focusguard_agent.config import AgentSettings, get_settings
 from focusguard_agent.synchronization.client import (
     BackendClient,
@@ -68,6 +76,7 @@ from focusguard_agent.tools.enroll import CONSENT, CONSENT_VERSION
 from focusguard_agent.tools.stop import is_running, read_pid_file, request_stop
 from focusguard_shared.constants import TaskCategory
 from focusguard_shared.utilities import get_logger
+from focusguard_shared.utilities.paths import app_data_dir
 
 logger = get_logger("helper.server")
 
@@ -78,6 +87,14 @@ Confirm = Callable[[str, str], bool]
 
 #: argv for `python -m focusguard_agent.agent ...` -> starts it.
 Launcher = Callable[[list[str]], Any]
+
+#: (title, message) -> "once", "always" or "no".
+CameraDialog = Callable[[str, str], str]
+
+#: () -> whether the camera can be used, opening Camo/DroidCam if needed.
+CameraProbe = Callable[[], CameraReadiness]
+
+_PREFS_FILE = "helper_prefs.json"
 
 
 def native_confirm(title: str, message: str) -> bool:
@@ -106,6 +123,79 @@ def _launch_module(module: str, arguments: list[str]) -> subprocess.Popen:
     flags = subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0
     # Same working directory as the helper, so the child reads the same .env.
     return subprocess.Popen(command, cwd=os.getcwd(), creationflags=flags)  # noqa: S603
+
+
+def native_camera_dialog(title: str, message: str) -> str:
+    """Ask before turning the camera on: Start once / Always allow / Cancel.
+
+    A small, always-on-top window in FocusGuard's colours. Cancel has the
+    focus, so a stray Enter never turns a camera on. Falls back to a standard
+    Yes/No/Cancel box if Tk is unavailable.
+    """
+    try:
+        import tkinter as tk
+    except ImportError:  # pragma: no cover - Tk ships with Python on Windows
+        return _messagebox_camera_dialog(title, message)
+
+    answer = {"value": "no"}
+    root = tk.Tk()
+    root.title(title)
+    root.configure(bg="#141310")
+    root.resizable(False, False)
+    root.attributes("-topmost", True)
+
+    def choose(value: str) -> None:
+        answer["value"] = value
+        root.destroy()
+
+    root.protocol("WM_DELETE_WINDOW", lambda: choose("no"))
+    tk.Label(
+        root, text=title.replace("FocusGuard - ", ""), bg="#141310", fg="#ffcc00",
+        font=("Segoe UI Semibold", 13), anchor="w",
+    ).pack(fill="x", padx=22, pady=(18, 4))
+    tk.Label(
+        root, text=message, bg="#141310", fg="#f2efe6", font=("Segoe UI", 10),
+        justify="left", wraplength=460, anchor="w",
+    ).pack(fill="x", padx=22, pady=(0, 16))
+
+    row = tk.Frame(root, bg="#141310")
+    row.pack(fill="x", padx=22, pady=(0, 18))
+    style = {"font": ("Segoe UI Semibold", 10), "bd": 0, "padx": 14, "pady": 7,
+             "cursor": "hand2"}
+    tk.Button(row, text="Start once", bg="#ffcc00", fg="#0b0a08",
+              activebackground="#ffd633", command=lambda: choose("once"), **style
+              ).pack(side="left")
+    tk.Button(row, text="Always allow on this computer", bg="#2a2823", fg="#f2efe6",
+              activebackground="#3a3730", command=lambda: choose("always"), **style
+              ).pack(side="left", padx=8)
+    cancel = tk.Button(row, text="Cancel", bg="#141310", fg="#9a958a",
+                       activebackground="#2a2823", command=lambda: choose("no"), **style)
+    cancel.pack(side="right")
+    root.bind("<Escape>", lambda _event: choose("no"))
+
+    root.update_idletasks()
+    x = (root.winfo_screenwidth() - root.winfo_width()) // 2
+    y = (root.winfo_screenheight() - root.winfo_height()) // 3
+    root.geometry(f"+{x}+{y}")
+    root.lift()
+    root.focus_force()
+    cancel.focus_set()
+    root.mainloop()
+    return answer["value"]
+
+
+def _messagebox_camera_dialog(title: str, message: str) -> str:
+    if sys.platform != "win32":
+        return "no"
+    import ctypes
+
+    text = (
+        f"{message}\n\nYes = start now and always allow on this computer\n"
+        "No = start just this once\nCancel = do not start"
+    )
+    flags = 0x03 | 0x20 | 0x40000 | 0x10000 | 0x200  # YESNOCANCEL, ?, topmost, front, default 3rd
+    result = ctypes.windll.user32.MessageBoxW(None, text, title, flags)
+    return {6: "always", 7: "once"}.get(result, "no")
 
 
 def launch_agent(arguments: list[str]) -> subprocess.Popen:
@@ -137,10 +227,11 @@ def _rule_list(value: Any) -> list[str]:
 
 
 class HelperError(Exception):
-    def __init__(self, status: int, message: str) -> None:
+    def __init__(self, status: int, message: str, extra: dict | None = None) -> None:
         super().__init__(message)
         self.status = status
         self.message = message
+        self.extra = extra or {}
 
 
 class FocusGuardHelper:
@@ -153,11 +244,17 @@ class FocusGuardHelper:
         launcher: Launcher = launch_agent,
         client_factory: Callable[..., BackendClient] = BackendClient,
         camera_launcher: Launcher = launch_camera_check,
+        camera_dialog: CameraDialog = native_camera_dialog,
+        camera_probe: CameraProbe | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self._confirm = confirm
         self._launcher = launcher
         self._camera_launcher = camera_launcher
+        self._camera_dialog = camera_dialog
+        self._camera_probe = camera_probe or (
+            lambda: check_camera(self.settings.camera.device_name)
+        )
         #: The open camera-check window, so a session cannot start while it
         #: holds the camera (two processes cannot share most webcams).
         self._camera_process: Any = None
@@ -173,6 +270,74 @@ class FocusGuardHelper:
         if found is None or not is_running(found[0]):
             return None
         return found[1] or "Focus session"
+
+    # -- remembered approval -----------------------------------------------
+
+    @staticmethod
+    def _prefs_path():
+        return app_data_dir() / _PREFS_FILE
+
+    def _always_allowed(self) -> bool:
+        try:
+            return bool(json.loads(self._prefs_path().read_text(encoding="utf-8")).get(
+                "camera_always_allowed"
+            ))
+        except (OSError, ValueError):
+            return False
+
+    def _set_always_allowed(self, value: bool) -> None:
+        path = self._prefs_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"camera_always_allowed": value}), encoding="utf-8")
+        logger.info("Camera approval set to %s", "always allow" if value else "ask every time")
+
+    def set_prefs(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """The portal may only turn 'always allow' OFF. Turning it on needs the dialog."""
+        if payload.get("ask_every_time") is True:
+            self._set_always_allowed(False)
+        return {"ok": True, "camera_always_allowed": self._always_allowed()}
+
+    def _approve_camera(self, title: str, message: str) -> None:
+        """Ask before the camera turns on, unless this computer said 'always allow'."""
+        if self._always_allowed():
+            return
+        if not self._asking.acquire(blocking=False):
+            raise HelperError(409, "A FocusGuard question is already open on this computer.")
+        try:
+            answer = self._camera_dialog(title, message)
+        finally:
+            self._asking.release()
+        if answer == "always":
+            self._set_always_allowed(True)
+        elif answer != "once":
+            raise HelperError(403, "Turning the camera on was declined on the computer.")
+
+    def _ready_camera(self) -> CameraReadiness:
+        """Make sure a camera will send video; open Camo/DroidCam if it is closed."""
+        readiness = self._camera_probe()
+        if not readiness.ready:
+            raise HelperError(424, readiness.message, {"camera": readiness.as_dict()})
+        return readiness
+
+    def _chosen_camera(self) -> str | None:
+        """The camera a session would use right now (webcam first). Cached 15 s:
+        the portal asks every few seconds, and listing devices costs a little."""
+        import time
+
+        now = time.monotonic()
+        cached = getattr(self, "_camera_cache", None)
+        if cached is not None and now - cached[0] < 15:
+            return cached[1]
+        try:
+            from focusguard_agent.capture.camera_apps import choose_camera, running_processes
+            from focusguard_agent.capture.devices import enumerate_devices
+
+            names = [device.name for device in enumerate_devices()]
+            chosen = choose_camera(names, self.settings.camera.device_name, running_processes())
+        except Exception:  # noqa: BLE001 - status must never fail over this
+            chosen = self.settings.camera.device_name or None
+        self._camera_cache = (now, chosen)
+        return chosen
 
     def _camera_check_running(self) -> bool:
         process = self._camera_process
@@ -201,8 +366,9 @@ class FocusGuardHelper:
                 credential.backend_url if credential else self.settings.sync.backend_url
             ),
             "session": {"running": session is not None, "name": session},
+            "camera_always_allowed": self._always_allowed(),
             "camera": {
-                "device_name": self.settings.camera.device_name,
+                "device_name": self._chosen_camera(),
                 "check_running": self._camera_check_running(),
                 "calibrated": profile is not None,
                 "calibrated_at": profile.created_at if profile else None,
@@ -259,8 +425,27 @@ class FocusGuardHelper:
             raise HelperError(400, str(error)) from error
 
         save_credential(credential)
+        if current_secret is not None:
+            # Moved from another account: what was recorded before stays here.
+            self._keep_unsent_local()
         logger.info("Computer connected for user %s", credential.user_id)
         return {"ok": True, "user_id": credential.user_id}
+
+    @staticmethod
+    def _keep_unsent_local() -> None:
+        from focusguard_agent.local_store.database import LocalStore
+
+        with LocalStore() as store:
+            store.keep_unsynced_local()
+
+    def tidy_local_store(self) -> None:
+        """Close sessions a killed agent left open - unless one is running now."""
+        if self._running_session() is not None:
+            return
+        from focusguard_agent.local_store.database import LocalStore
+
+        with LocalStore() as store:
+            store.close_orphaned_sessions()
 
     def tasks(self) -> list[dict[str, Any]]:
         try:
@@ -285,22 +470,21 @@ class FocusGuardHelper:
         if self._camera_check_running():
             raise HelperError(409, "The camera check is already open on this computer.")
 
-        camera = self.settings.camera.device_name or "your webcam"
-        approved = self._ask(
+        readiness = self._ready_camera()
+        camera = readiness.device or "your webcam"
+        self._approve_camera(
             "FocusGuard - open the camera check?",
             f"Open a camera window using {camera}?\n\n"
             "You will see yourself with face points drawn on. For the first 12 seconds,\n"
             "look at the screen and blink normally while FocusGuard learns how your\n"
             "eyes look when they are open. The window then stays live until you close it.\n\n"
             "Nothing is recorded or uploaded. The result is one number, kept on this\n"
-            "computer. If you use a phone camera app (Camo, DroidCam), open it first.",
+            "computer.",
         )
-        if not approved:
-            raise HelperError(403, "The camera check was declined on the computer.")
 
         self._camera_process = self._camera_launcher(["--show", "--keep-open", "--wait-on-exit"])
         logger.info("Camera check opened from the portal")
-        return {"ok": True}
+        return {"ok": True, "camera": readiness.as_dict()}
 
     def start_session(self, payload: dict[str, Any]) -> dict[str, Any]:
         running = self._running_session()
@@ -338,7 +522,8 @@ class FocusGuardHelper:
                     if items:
                         arguments += [f"--{flag}", *items]
 
-        approved = self._ask(
+        readiness = self._ready_camera()
+        self._approve_camera(
             "FocusGuard - start monitoring?",
             f'Start the focus session "{name}"?\n\n'
             "Your webcam will be analysed on this computer, and the application\n"
@@ -346,14 +531,12 @@ class FocusGuardHelper:
             "No video, screenshots or typing are ever recorded or uploaded.\n"
             "A FocusGuard window stays open for as long as monitoring runs.",
         )
-        if not approved:
-            raise HelperError(403, "Starting the session was declined on the computer.")
 
         # --preview: a live analysis window that stays up for the whole
         # session; closing it is how the person ends the session.
         self._launcher([*arguments, "--preview"])
         logger.info("Session %r started from the portal", name)
-        return {"ok": True, "name": name}
+        return {"ok": True, "name": name, "camera": readiness.as_dict()}
 
     def stop_session(self) -> dict[str, Any]:
         if self._running_session() is None:
@@ -365,8 +548,25 @@ class FocusGuardHelper:
 # --- HTTP -------------------------------------------------------------------
 
 
+def portal_origins(settings: AgentSettings) -> set[str]:
+    """Web pages allowed to talk to the helper.
+
+    The configured list (the local development portals) plus the server this
+    computer uploads to: a deployed FocusGuard serves its portal from the same
+    address as its API, so trusting the server means trusting its portal - and
+    nothing else on the internet.
+    """
+    from urllib.parse import urlsplit
+
+    origins = {origin.rstrip("/") for origin in settings.helper.allowed_origins}
+    parts = urlsplit(settings.sync.backend_url)
+    if parts.scheme in ("http", "https") and parts.netloc:
+        origins.add(f"{parts.scheme}://{parts.netloc}")
+    return origins
+
+
 def make_handler(helper: FocusGuardHelper, port: int) -> type[BaseHTTPRequestHandler]:
-    allowed_origins = {origin.rstrip("/") for origin in helper.settings.helper.allowed_origins}
+    allowed_origins = portal_origins(helper.settings)
     allowed_hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
 
     class Handler(BaseHTTPRequestHandler):
@@ -459,14 +659,14 @@ def make_handler(helper: FocusGuardHelper, port: int) -> type[BaseHTTPRequestHan
                 else:
                     self._send(404, {"error": "not found"})
             except HelperError as error:
-                self._send(error.status, {"error": error.message})
+                self._send(error.status, {"error": error.message, **error.extra})
 
         def do_POST(self) -> None:  # noqa: N802
             try:
                 raw = self._read_raw()
             except HelperError as error:
                 self.close_connection = True
-                self._send(error.status, {"error": error.message})
+                self._send(error.status, {"error": error.message, **error.extra})
                 return
             if not self._guard(require_origin=True):
                 return
@@ -475,6 +675,7 @@ def make_handler(helper: FocusGuardHelper, port: int) -> type[BaseHTTPRequestHan
                 "/sessions/start": lambda body: helper.start_session(body),
                 "/sessions/stop": lambda body: helper.stop_session(),
                 "/camera/check": lambda body: helper.camera_check(),
+                "/prefs": lambda body: helper.set_prefs(body),
             }
             route = routes.get(self.path)
             if route is None:
@@ -483,9 +684,28 @@ def make_handler(helper: FocusGuardHelper, port: int) -> type[BaseHTTPRequestHan
             try:
                 self._send(200, route(self._body(raw)))
             except HelperError as error:
-                self._send(error.status, {"error": error.message})
+                self._send(error.status, {"error": error.message, **error.extra})
 
     return Handler
+
+
+class _ExclusiveServer(ThreadingHTTPServer):
+    """A server that owns its port outright.
+
+    The standard library sets SO_REUSEADDR, which on Windows means *another
+    process may bind the same port* - so a second Helper would start beside the
+    first instead of noticing it, and requests would land on either. Exclusive
+    use makes the second bind fail, which is how `bind()` knows one is running.
+    """
+
+    allow_reuse_address = False
+
+    def server_bind(self) -> None:
+        import socket
+
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
 
 
 class HelperServer:
@@ -499,7 +719,7 @@ class HelperServer:
 
     def bind(self) -> bool:
         try:
-            self._server = ThreadingHTTPServer(
+            self._server = _ExclusiveServer(
                 ("127.0.0.1", self.port), make_handler(self.helper, self.port)
             )
         except OSError:

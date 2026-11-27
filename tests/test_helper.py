@@ -18,6 +18,7 @@ import json
 
 import pytest
 
+from focusguard_agent.capture.camera_apps import CameraReadiness, check_camera
 from focusguard_agent.config import AgentSettings
 from focusguard_agent.helper import FocusGuardHelper, HelperServer
 from focusguard_agent.synchronization.credentials import (
@@ -86,18 +87,30 @@ def world(tmp_path, monkeypatch):
         asked.append((title, message))
         return answers.pop(0) if answers else False
 
+    def camera_dialog(title: str, message: str) -> str:
+        """True -> "once", False -> "no", or a literal "always"/"once"/"no"."""
+        asked.append((title, message))
+        answer = answers.pop(0) if answers else False
+        if isinstance(answer, str):
+            return answer
+        return "once" if answer else "no"
+
+    readiness = {"value": CameraReadiness(ready=True, device="Camo", message="ok")}
+
     helper = FocusGuardHelper(
         settings=AgentSettings(),
         confirm=confirm,
         launcher=launched.append,
         client_factory=FakeClient,
         camera_launcher=open_camera,
+        camera_dialog=camera_dialog,
+        camera_probe=lambda: readiness["value"],
     )
     server = HelperServer(helper, port=0)
     assert server.start()
     yield {
         "port": server.port, "answers": answers, "asked": asked,
-        "launched": launched, "cameras": cameras,
+        "launched": launched, "cameras": cameras, "readiness": readiness,
     }
     server.stop()
 
@@ -308,3 +321,96 @@ def test_sessions_open_the_live_analysis_window(world) -> None:
     world["answers"].append(True)
     call(world, "POST", "/sessions/start", {"name": "Study"})
     assert world["launched"][0][-1] == "--preview"
+
+
+def test_a_second_helper_cannot_bind_the_same_port(world) -> None:
+    """Windows lets two sockets share a port with SO_REUSEADDR; the Helper must not."""
+    second = HelperServer(
+        FocusGuardHelper(settings=AgentSettings(), confirm=lambda *_: False), port=world["port"]
+    )
+    assert second.bind() is False
+
+
+# --- remembered approval ("Always allow on this computer") -----------------------
+
+
+def test_always_allow_is_remembered_and_skips_the_dialog_next_time(world) -> None:
+    world["answers"].append("always")
+    assert call(world, "POST", "/sessions/start", {"name": "First"})[0] == 200
+    assert len(world["asked"]) == 1
+    assert call(world, "GET", "/status")[1]["camera_always_allowed"] is True
+
+    world["launched"].clear()
+    assert call(world, "POST", "/camera/check", {})[0] == 200
+    assert len(world["asked"]) == 1, "no second dialog once always-allowed"
+
+
+def test_start_once_does_not_remember(world) -> None:
+    world["answers"].append("once")
+    call(world, "POST", "/sessions/start", {"name": "First"})
+    assert call(world, "GET", "/status")[1]["camera_always_allowed"] is False
+
+
+def test_the_portal_can_only_turn_always_allow_off(world) -> None:
+    world["answers"].append("always")
+    call(world, "POST", "/sessions/start", {"name": "First"})
+
+    # Trying to switch it ON from a page does nothing.
+    call(world, "POST", "/prefs", {"ask_every_time": True})
+    status, body, _ = call(world, "POST", "/prefs", {"camera_always_allowed": True})
+    assert status == 200 and body["camera_always_allowed"] is False
+
+
+def test_the_portal_cannot_grant_always_allow(world) -> None:
+    status, body, _ = call(world, "POST", "/prefs", {"camera_always_allowed": True})
+    assert status == 200 and body["camera_always_allowed"] is False
+
+
+# --- camera readiness -------------------------------------------------------------
+
+
+def test_a_missing_phone_camera_app_is_refused_with_its_download_link(world) -> None:
+    world["readiness"]["value"] = check_camera(
+        "Camo", devices=["Camo"], processes=set(), find_app=lambda app: None
+    )
+
+    status, body, _ = call(world, "POST", "/sessions/start", {"name": "Study"})
+
+    assert status == 424
+    assert "isn't installed" in body["error"]
+    assert body["camera"]["download_url"] == "https://reincubate.com/camo/"
+    assert world["asked"] == [] and world["launched"] == [], "nothing asked or started"
+
+
+def test_no_camera_at_all_is_refused_before_asking(world) -> None:
+    world["readiness"]["value"] = check_camera("Camo", devices=[])
+    status, body, _ = call(world, "POST", "/camera/check", {})
+    assert status == 424 and "No camera was found" in body["error"]
+    assert world["asked"] == []
+
+
+def test_a_closed_phone_camera_app_is_opened_and_the_session_continues(world) -> None:
+    opened: list[str] = []
+    world["readiness"]["value"] = check_camera(
+        "Camo", devices=["Camo"], processes=set(),
+        find_app=lambda app: "Reincubate.Camo!App",
+        opener=lambda app_id: opened.append(app_id) or True,
+    )
+    world["answers"].append(True)
+
+    status, body, _ = call(world, "POST", "/sessions/start", {"name": "Study"})
+
+    assert status == 200
+    assert opened == ["Reincubate.Camo!App"]
+    assert body["camera"]["opened_app"] is True
+    assert "Opening Camo Studio" in body["camera"]["message"]
+
+
+def test_a_real_webcam_needs_no_app() -> None:
+    readiness = check_camera("Integrated Camera", devices=["Integrated Camera"], processes=set())
+    assert readiness.ready and readiness.app is None
+
+
+def test_a_running_phone_camera_app_is_ready() -> None:
+    readiness = check_camera("Camo", devices=["Camo", "DroidCam Video"], processes={"camostudio"})
+    assert readiness.ready and readiness.app_running is True and readiness.device == "Camo"

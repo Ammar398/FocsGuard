@@ -70,6 +70,10 @@ class SyncStatus(StrEnum):
     SYNCED = "SYNCED"
     FAILED = "FAILED"
 
+    #: Recorded before this computer was moved to a different account. Kept on
+    #: the computer and never uploaded: it was not the new account's data.
+    LOCAL_ONLY = "LOCAL_ONLY"
+
 
 class MonitorProfile(StrEnum):
     """Display setup, which changes how gaze-away is penalised (spec section 60).

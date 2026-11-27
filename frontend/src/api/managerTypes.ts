@@ -58,6 +58,9 @@ export interface WindowStats {
   phone_seconds: number
   looking_away_seconds: number
   face_absent_seconds: number
+  eyes_closed_seconds: number
+  head_down_seconds: number
+  multiple_faces_seconds: number
   drowsiness_events: number
 }
 

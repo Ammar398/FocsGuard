@@ -3,6 +3,8 @@
     python -m focusguard_agent.helper                    # run it now (Ctrl+C to quit)
     python -m focusguard_agent.helper --install-startup  # also start it at every Windows sign-in
     python -m focusguard_agent.helper --remove-startup
+    python -m focusguard_agent.helper --server https://your-focusguard.onrender.com
+                                         # which FocusGuard server this computer uses
 
 The startup entry is a one-line script in your own Startup folder - visible in
 Task Manager -> Startup apps, and removable there or with --remove-startup. It
@@ -46,6 +48,8 @@ def install_startup() -> Path:
         f'cd /d "{Path.cwd()}"\r\n'
         f'start "" "{interpreter}" -m focusguard_agent.helper\r\n',
         encoding="utf-8",
+        # The text already holds CRLF; newline="" stops Windows doubling it.
+        newline="",
     )
     return path
 
@@ -54,7 +58,22 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="FocusGuard Helper")
     parser.add_argument("--install-startup", action="store_true")
     parser.add_argument("--remove-startup", action="store_true")
+    parser.add_argument("--server", metavar="URL",
+                        help="the address of your FocusGuard website, e.g. https://x.onrender.com")
     args = parser.parse_args(argv)
+
+    if args.server:
+        from focusguard_agent.config import get_settings, normalise_server_url, save_server_url
+
+        try:
+            normalise_server_url(args.server)
+        except ValueError as error:
+            print(error, file=sys.stderr)
+            return 2
+        saved = save_server_url(args.server)
+        url = get_settings(reload=True).sync.backend_url
+        print(f"This computer now uses the FocusGuard server at {url} (saved in {saved}).")
+        print("If the Helper is already running, restart it (or sign out of Windows and back in).")
 
     if args.remove_startup:
         startup_path().unlink(missing_ok=True)
@@ -65,11 +84,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"The helper will start when you sign in to Windows ({install_startup()}).")
 
     configure_logging(level="INFO")
-    server = HelperServer(FocusGuardHelper())
+    helper = FocusGuardHelper()
+    server = HelperServer(helper)
     if not server.bind():
         print(f"The FocusGuard Helper is already running (port {server.port}).")
         return 0
 
+    helper.tidy_local_store()
     print(f"FocusGuard Helper ready on http://127.0.0.1:{server.port}")
     print("Open the FocusGuard portal and click 'Connect this computer'.")
     print("Anything that connects this computer or turns the webcam on asks you first.")

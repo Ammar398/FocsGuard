@@ -112,6 +112,9 @@ class WindowStats(BaseModel):
     phone_seconds: float = 0.0
     looking_away_seconds: float = 0.0
     face_absent_seconds: float = 0.0
+    eyes_closed_seconds: float = 0.0
+    head_down_seconds: float = 0.0
+    multiple_faces_seconds: float = 0.0
     drowsiness_events: int = 0
 
 

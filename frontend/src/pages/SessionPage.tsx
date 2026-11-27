@@ -6,7 +6,7 @@
  * timeline first would show a shape before there is anything to compare it to.
  */
 
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { api } from '../api/client'
 import { eventLabel, type SessionDetail, type VisionEvent } from '../api/types'
@@ -14,12 +14,19 @@ import { ActivityBreakdown } from '../components/ActivityBreakdown'
 import { FocusRing } from '../components/FocusRing'
 import { FocusTimeline } from '../components/FocusTimeline'
 import { Card, StatCard } from '../components/StatCard'
-import { formatClock, formatDate, formatDuration, scoreDescription } from '../lib/format'
+import {
+  formatClock,
+  formatDate,
+  formatDuration,
+  isLiveSession,
+  scoreDescription,
+} from '../lib/format'
 import { usePolling } from '../lib/usePolling'
 
 export function SessionPage() {
   const { id } = useParams<{ id: string }>()
   const sessionId = Number(id)
+  const navigate = useNavigate()
 
   const { data, error, loading } = usePolling<SessionDetail>(
     () => api.session(sessionId),
@@ -46,7 +53,8 @@ export function SessionPage() {
     )
   }
 
-  const running = data.ended_at === null
+  const running = isLiveSession(data)
+  const interrupted = data.ended_at === null && !running
   const unscored = Math.max(
     0,
     data.duration_seconds - data.focused_seconds - data.distracted_seconds,
@@ -55,15 +63,27 @@ export function SessionPage() {
   return (
     <div className="space-y-6">
       <div>
-        <Link to="/" className="text-sm text-[var(--color-accent)] hover:underline">
-          ← All sessions
-        </Link>
+        {/* Back to wherever it was opened from: a student's list, or a manager's
+            employee or task page. Opened directly, there is no history to return to. */}
+        <button
+          type="button"
+          onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))}
+          className="text-sm text-[var(--color-accent)] hover:underline"
+        >
+          ← Back
+        </button>
         <h1 className="mt-2 text-2xl font-semibold">{data.name}</h1>
         <p className="mt-1 text-sm text-[var(--color-muted)]">
           {formatDate(data.started_at)}
           {data.ended_at !== null && <> to {formatClock(data.ended_at)}</>}
           {data.task_name !== null && <>, {data.task_name}</>}
           {running && <>, still running</>}
+          {interrupted && (
+            <>
+              , interrupted before it ended. Totals appear the next time FocusGuard starts on
+              that computer.
+            </>
+          )}
         </p>
       </div>
 
@@ -138,7 +158,7 @@ function EventList({ events }: { events: VisionEvent[] }) {
               {eventLabel(event.event_type)}
             </span>
             <span className="block text-xs text-[var(--color-muted)]">
-              {formatClock(event.start_time)} ·{' '}
+              {formatClock(event.start_time, true)},{' '}
               {event.confidence >= 0.8
                 ? 'clear signal'
                 : event.confidence >= 0.6

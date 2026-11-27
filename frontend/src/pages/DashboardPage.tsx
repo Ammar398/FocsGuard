@@ -32,6 +32,7 @@ import { useAuth } from '../auth/context'
 import {
   formatDate,
   formatDuration,
+  isLiveSession,
   scoreColor,
   scoreDescription,
 } from '../lib/format'
@@ -41,7 +42,7 @@ import { usePolling } from '../lib/usePolling'
 const LIVE_POLL_MS = 15_000
 
 function isRunning(session: SessionSummary): boolean {
-  return session.ended_at === null
+  return isLiveSession(session)
 }
 
 export function DashboardPage() {
@@ -205,7 +206,9 @@ function SessionRow({ session }: { session: SessionSummary }) {
           <span className="block truncate font-medium">{session.name}</span>
           <span className="block text-xs text-[var(--color-muted)]">
             {formatDate(session.started_at)}, {formatDuration(session.duration_seconds)}
-            {isRunning(session) && ', running'}
+            {isRunning(session)
+              ? ', running'
+              : session.ended_at === null && ', interrupted'}
           </span>
         </span>
 

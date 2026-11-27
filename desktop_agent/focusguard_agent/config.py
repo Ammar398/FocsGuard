@@ -30,15 +30,15 @@ from focusguard_shared.utilities.paths import app_data_dir, log_dir, model_cache
 class CameraSettings(BaseModel):
     """Webcam capture (spec section 3).
 
-    Defaults target a phone used as a webcam through Camo, which is this
-    machine's only camera. Virtual cameras register and de-register as their host
-    application starts and stops, so ``device_name`` is matched first and
-    ``device_index`` is only a fallback.
+    By default the camera is chosen automatically: a real built-in or USB webcam
+    first, and a phone-camera app (Camo, DroidCam) only on a computer without
+    one - see capture/camera_apps.choose_camera. Setting ``device_name`` pins a
+    specific camera instead.
     """
 
-    #: Substring matched case-insensitively against enumerated device names,
-    #: e.g. "Camo", "DroidCam", "Pixel". Empty means "use device_index".
-    device_name: str = "Camo"
+    #: Substring matched case-insensitively against device names, e.g. "Camo",
+    #: "DroidCam", "Integrated". Empty means "choose automatically, webcam first".
+    device_name: str = ""
     device_index: int = 0
 
     #: DirectShow is markedly more reliable than MSMF for virtual cameras on
@@ -340,9 +340,54 @@ class AgentSettings(BaseSettings):
 _settings: AgentSettings | None = None
 
 
+def server_file() -> Path:
+    """Where this computer remembers which FocusGuard server it belongs to.
+
+    Written by `python -m focusguard_agent.helper --server <url>`. Kept in the
+    per-user data folder rather than the install folder, so reinstalling or
+    updating FocusGuard does not forget it.
+    """
+    return app_data_dir() / "server.env"
+
+
+def normalise_server_url(url: str) -> str:
+    """Validate a server address typed by a person.
+
+    Only https, except for this computer itself: an account password and every
+    upload travel to this address, so plain http over the internet is refused.
+    """
+    from urllib.parse import urlsplit
+
+    cleaned = url.strip().rstrip("/")
+    parts = urlsplit(cleaned)
+    local = parts.hostname in {"127.0.0.1", "localhost", "::1"}
+    if parts.scheme not in ("https", "http") or not parts.hostname:
+        raise ValueError(f"{url!r} is not a web address. Example: https://focusguard.onrender.com")
+    if parts.scheme == "http" and not local:
+        raise ValueError("Use the https:// address of your FocusGuard server.")
+    if parts.path not in ("", "/") or parts.query or parts.fragment:
+        raise ValueError("Give only the server address, without a path.")
+    return f"{parts.scheme}://{parts.netloc}"
+
+
+def save_server_url(url: str) -> Path:
+    path = server_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "# Written by: python -m focusguard_agent.helper --server <url>\n"
+        f"FOCUSGUARD_SYNC__BACKEND_URL={normalise_server_url(url)}\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 def get_settings(reload: bool = False) -> AgentSettings:
-    """Return the process-wide settings object, loading it once."""
+    """Return the process-wide settings object, loading it once.
+
+    Later files win: the project's `.env`, then this computer's saved server.
+    Real environment variables beat both.
+    """
     global _settings
     if _settings is None or reload:
-        _settings = AgentSettings()
+        _settings = AgentSettings(_env_file=(".env", server_file()))
     return _settings

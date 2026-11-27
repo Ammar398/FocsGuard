@@ -99,6 +99,9 @@ export function EmployeeDetailPage() {
         <StatCard label="Looking away" value={formatDuration(stats.looking_away_seconds)} />
         <StatCard label="Away from desk" value={formatDuration(stats.face_absent_seconds)} />
         <StatCard label="Tiredness events" value={stats.drowsiness_events} />
+        <StatCard label="Eyes closed" value={formatDuration(stats.eyes_closed_seconds)} />
+        <StatCard label="Head down" value={formatDuration(stats.head_down_seconds)} />
+        <StatCard label="Someone else in frame" value={formatDuration(stats.multiple_faces_seconds)} />
       </div>
 
       <Card title="Productive, neutral and distracting time">
@@ -449,7 +452,7 @@ function ManageCard({ data, onChange }: { data: EmployeeDetail; onChange: () => 
       </div>
 
       <p className="mt-4 text-xs text-[var(--color-muted)]">
-        {[eventLabel('PHONE_VISIBLE'), eventLabel('GAZE_AWAY'), eventLabel('FACE_ABSENT'), eventLabel('DROWSINESS')].join(', ')}
+        {(['PHONE_VISIBLE', 'GAZE_AWAY', 'FACE_ABSENT', 'EYES_CLOSED', 'HEAD_DOWN', 'MULTIPLE_FACES', 'DROWSINESS'] as const).map(eventLabel).join(', ')}
         : each is a webcam estimate recorded with a confidence, not a certainty.
       </p>
     </Card>
