@@ -109,8 +109,15 @@ app.include_router(downloads.router, prefix=API_PREFIX)
 @app.get("/health", response_model=HealthResponse, tags=["system"])
 def health() -> HealthResponse:
     """Liveness check. Reports the database dialect, never its credentials."""
+    from focusguard_backend.services.email import delivery
+    from focusguard_backend.services.email_codes import verification_required
+
     return HealthResponse(
-        status="ok", version=VERSION, database=database_url().split("://", 1)[0]
+        status="ok",
+        version=VERSION,
+        database=database_url().split("://", 1)[0],
+        email=delivery(),
+        email_verification=verification_required(),
     )
 
 

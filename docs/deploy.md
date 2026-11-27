@@ -92,13 +92,23 @@ computer (`127.0.0.1`), nothing else on your network.
 For a demonstration or FYP defence the free plan is enough. For real use,
 upgrade both.
 
-## 6. Email codes (later)
+## 6. Email codes (sign-up verification and password reset)
 
-Verification and password-reset codes are **off** (`FOCUSGUARD_REQUIRE_EMAIL_VERIFICATION=0`
-in `render.yaml`). To turn them on: in Render → `focusguard` → **Environment**,
-add `FOCUSGUARD_SMTP_HOST`, `FOCUSGUARD_SMTP_PORT`, `FOCUSGUARD_SMTP_USERNAME`,
-`FOCUSGUARD_SMTP_PASSWORD`, `FOCUSGUARD_MAIL_FROM` (e.g. a Gmail app password),
-then set `FOCUSGUARD_REQUIRE_EMAIL_VERIFICATION` to `1`.
+Render's free plan blocks the SMTP mail ports, so Gmail/Outlook SMTP never
+connects from there. FocusGuard sends through **Resend** over HTTPS instead.
+
+1. In Resend, verify a domain you own (**Domains**), then create an API key
+   (**API Keys** → *Sending access*).
+2. In Render → `focusguard` → **Environment**:
+   * `FOCUSGUARD_RESEND_API_KEY` = the key (`re_...`)
+   * `FOCUSGUARD_MAIL_FROM` = `FocusGuard <no-reply@your-verified-domain>`
+3. **Save, rebuild and deploy.** `https://<your-site>/health` then shows
+   `"email": "resend", "email_verification": true`.
+
+`FOCUSGUARD_REQUIRE_EMAIL_VERIFICATION` is `auto`: codes are asked for exactly
+when email can be sent. Set it to `0` to switch verification off on purpose.
+If an email is refused (wrong key, unverified domain), the reason is in the
+service's **Logs**, and the person can press "send a new code" straight away.
 
 ## Trying the production setup on this PC
 

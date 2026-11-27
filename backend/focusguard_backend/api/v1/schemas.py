@@ -195,6 +195,9 @@ class HealthResponse(BaseModel):
     status: str
     version: str
     database: str
+    #: "resend", "smtp" or "outbox" - how verification codes leave the server.
+    email: str = "outbox"
+    email_verification: bool = False
 
 
 # --- authentication (Phase 13) ----------------------------------------------

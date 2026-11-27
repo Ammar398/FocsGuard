@@ -31,7 +31,7 @@ from focusguard_backend.auth.tokens import hash_token
 from focusguard_backend.models.auth import EmailCode
 from focusguard_backend.models.base import as_utc
 from focusguard_backend.models.identity import User
-from focusguard_backend.services.email import code_email, get_mailer
+from focusguard_backend.services.email import code_email, delivery, get_mailer
 from focusguard_shared.utilities import get_logger
 
 logger = get_logger("backend.services.email_codes")
@@ -46,12 +46,20 @@ MAX_PER_HOUR = 5
 
 
 def verification_required() -> bool:
-    """Self-registered accounts must confirm their email before signing in.
+    """Must self-registered accounts confirm their email before signing in?
 
-    On by default. `FOCUSGUARD_REQUIRE_EMAIL_VERIFICATION=0` turns it off for a
-    deployment with no mail at all - not recommended outside a classroom demo.
+    `FOCUSGUARD_REQUIRE_EMAIL_VERIFICATION` decides when set: "1" on, "0" off.
+    Unset (or "auto"), it is on exactly when this server can really send email
+    (Resend or SMTP configured). A server that cannot send must never ask for a
+    code, because nobody could ever receive it and every new account would be
+    locked out.
     """
-    return os.environ.get("FOCUSGUARD_REQUIRE_EMAIL_VERIFICATION", "1") != "0"
+    setting = os.environ.get("FOCUSGUARD_REQUIRE_EMAIL_VERIFICATION", "auto").strip().lower()
+    if setting in ("0", "false", "no", "off"):
+        return False
+    if setting in ("1", "true", "yes", "on"):
+        return True
+    return delivery() != "outbox"
 
 
 def _hash(user_id: int, purpose: str, code: str) -> str:
@@ -97,17 +105,16 @@ def issue_and_send(db: Session, user: User, purpose: str, now: datetime | None =
     )
 
     code = _new_code()
-    db.add(
-        EmailCode(
-            user_id=user.id,
-            purpose=purpose,
-            code_hash=_hash(user.id, purpose, code),
-            expires_at=now + CODE_TTL,
-            attempts=0,
-            created_at=now,
-            updated_at=now,
-        )
+    record = EmailCode(
+        user_id=user.id,
+        purpose=purpose,
+        code_hash=_hash(user.id, purpose, code),
+        expires_at=now + CODE_TTL,
+        attempts=0,
+        created_at=now,
+        updated_at=now,
     )
+    db.add(record)
     db.commit()
 
     try:
@@ -115,9 +122,13 @@ def issue_and_send(db: Session, user: User, purpose: str, now: datetime | None =
             code_email(user.email, code, purpose, int(CODE_TTL.total_seconds() // 60))
         )
     except Exception:  # noqa: BLE001
-        # The account and the code exist; the person can press "send again".
-        # Failing the whole request would leave them with neither.
+        # The account exists; the person can press "send again". Failing the
+        # whole request would leave them with neither. The unsent code is
+        # withdrawn so it does not count towards the resend limits - otherwise
+        # "send again" would refuse for a minute after an email that never left.
         logger.exception("Could not send the %s email to user %d", purpose, user.id)
+        db.delete(record)
+        db.commit()
         return False
 
     logger.info("Sent a %s code to user %d", purpose, user.id)

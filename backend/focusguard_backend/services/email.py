@@ -2,6 +2,10 @@
 
 WHERE MAIL GOES
 ---------------
+* **Resend**, when `FOCUSGUARD_RESEND_API_KEY` is set - an email API reached
+  over HTTPS. This is the one for a hosted server: Render's free plan (and many
+  other hosts) block the SMTP ports, so SMTP silently never connects there.
+  `FOCUSGUARD_MAIL_FROM` must be an address on a domain verified in Resend.
 * **SMTP**, when `FOCUSGUARD_SMTP_HOST` is set - a real mail server, e.g. Gmail
   with an app password, Outlook, SendGrid or Mailgun SMTP.
 * **A local outbox folder** otherwise (`FOCUSGUARD_DEV_OUTBOX`, default
@@ -86,6 +90,37 @@ class SmtpMailer:
         logger.info("Email sent via SMTP to %s", message.to)
 
 
+class ResendMailer:
+    """Sends through Resend's HTTPS API (https://resend.com/docs/api-reference)."""
+
+    endpoint = "https://api.resend.com/emails"
+
+    def __init__(self) -> None:
+        self.api_key = os.environ["FOCUSGUARD_RESEND_API_KEY"].strip()
+
+    def send(self, message: OutgoingEmail) -> None:
+        import httpx
+
+        response = httpx.post(
+            self.endpoint,
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            json={
+                "from": _sender(),
+                "to": [message.to],
+                "subject": message.subject,
+                "text": message.text,
+                "html": message.html,
+            },
+            timeout=20,
+        )
+        if response.status_code >= 400:
+            # Resend explains itself ("domain is not verified", "invalid API key");
+            # that explanation never contains the code, so it is safe to log.
+            raise RuntimeError(f"Resend refused the email ({response.status_code}): "
+                               f"{response.text[:300]}")
+        logger.info("Email sent via Resend to %s", message.to)
+
+
 class OutboxMailer:
     """Writes each message to a folder instead of sending it (development)."""
 
@@ -114,10 +149,24 @@ class MemoryMailer:
 _mailer: Mailer | None = None
 
 
+def delivery() -> str:
+    """How email leaves this server: "resend", "smtp" or "outbox" (nowhere)."""
+    if os.environ.get("FOCUSGUARD_RESEND_API_KEY", "").strip():
+        return "resend"
+    if os.environ.get("FOCUSGUARD_SMTP_HOST", "").strip():
+        return "smtp"
+    return "outbox"
+
+
 def get_mailer() -> Mailer:
     global _mailer
     if _mailer is None:
-        _mailer = SmtpMailer() if os.environ.get("FOCUSGUARD_SMTP_HOST") else OutboxMailer()
+        route = delivery()
+        _mailer = (
+            ResendMailer() if route == "resend"
+            else SmtpMailer() if route == "smtp"
+            else OutboxMailer()
+        )
     return _mailer
 
 
@@ -188,12 +237,12 @@ def main(argv: list[str] | None = None) -> int:
         print("Usage: python -m focusguard_backend.services.email you@example.com")
         return 2
     mailer = get_mailer()
-    kind = "SMTP" if isinstance(mailer, SmtpMailer) else "the dev outbox (no SMTP configured)"
+    kind = {"resend": "Resend", "smtp": "SMTP"}.get(delivery(), "the dev outbox (not sent)")
     try:
         mailer.send(code_email(args[0], "123456", "VERIFY_EMAIL", 15))
     except Exception as error:  # noqa: BLE001
         print(f"Sending failed: {error}")
-        print("Check FOCUSGUARD_SMTP_HOST, _PORT, _USERNAME and _PASSWORD in .env.")
+        print("Check FOCUSGUARD_RESEND_API_KEY / FOCUSGUARD_MAIL_FROM, or the SMTP settings.")
         return 1
     print(f"Test email (code 123 456) sent to {args[0]} via {kind}.")
     return 0

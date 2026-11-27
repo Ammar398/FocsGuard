@@ -22,8 +22,15 @@ services:
       # Signs every sign-in token. Generated once by Render, never in the repo.
       - key: JWT_SECRET_KEY
         generateValue: true
-      # Email codes are off until SMTP is set up (docs/deploy.md, step 6).
+      # "auto": sign-up asks for an emailed code exactly when Resend is set up
+      # below, so accounts are never locked out waiting for mail that cannot come.
       - key: FOCUSGUARD_REQUIRE_EMAIL_VERIFICATION
-        value: "0"
+        value: auto
+      # Email over HTTPS (Render's free plan blocks SMTP ports). Both are filled
+      # in on the Render dashboard, never in this file. docs/deploy.md, step 6.
+      - key: FOCUSGUARD_RESEND_API_KEY
+        sync: false
+      - key: FOCUSGUARD_MAIL_FROM
+        sync: false
       - key: FOCUSGUARD_LOG_LEVEL
         value: INFO

@@ -48,7 +48,11 @@ def mailer():
 @pytest.fixture
 def client(tmp_path, monkeypatch, mailer):
     monkeypatch.setenv("FOCUSGUARD_BACKEND_DB", str(tmp_path / "email.db"))
-    monkeypatch.delenv("FOCUSGUARD_REQUIRE_EMAIL_VERIFICATION", raising=False)
+    # On explicitly: with no Resend/SMTP configured, "auto" would switch it off
+    # (see test_without_real_email_verification_is_off_by_itself).
+    monkeypatch.setenv("FOCUSGUARD_REQUIRE_EMAIL_VERIFICATION", "1")
+    monkeypatch.delenv("FOCUSGUARD_RESEND_API_KEY", raising=False)
+    monkeypatch.delenv("FOCUSGUARD_SMTP_HOST", raising=False)
     reset_engine()
     rate_limit.reset_all()
     from focusguard_backend.main import app
@@ -337,3 +341,81 @@ def test_switching_verification_off_unlocks_accounts_still_waiting_for_a_code(
 
     monkeypatch.setenv("FOCUSGUARD_REQUIRE_EMAIL_VERIFICATION", "0")
     assert login(client).status_code == 200
+
+
+# --- where mail goes, and when a code is asked for --------------------------------
+
+
+def test_without_real_email_verification_is_off_by_itself(client, mailer, monkeypatch):
+    """A server that cannot send must not lock every new account out."""
+    monkeypatch.delenv("FOCUSGUARD_REQUIRE_EMAIL_VERIFICATION")
+    assert client.get("/health").json()["email"] == "outbox"
+    register(client)
+    assert mailer.messages == []
+    assert login(client).status_code == 200
+
+
+def test_with_resend_configured_verification_is_on_by_itself(client, mailer, monkeypatch):
+    monkeypatch.delenv("FOCUSGUARD_REQUIRE_EMAIL_VERIFICATION")
+    monkeypatch.setenv("FOCUSGUARD_RESEND_API_KEY", "re_test_key")
+    health = client.get("/health").json()
+    assert health["email"] == "resend" and health["email_verification"] is True
+    assert "re_test_key" not in str(health)
+    register(client)
+    assert login(client).status_code == 403
+
+
+def test_resend_is_called_over_https_with_the_message(monkeypatch):
+    import httpx
+
+    from focusguard_backend.services.email import ResendMailer
+
+    sent = {}
+
+    def fake_post(url, headers, json, timeout):
+        sent.update(url=url, headers=headers, json=json)
+        return httpx.Response(200, json={"id": "abc"})
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setenv("FOCUSGUARD_RESEND_API_KEY", "re_test_key")
+    monkeypatch.setenv("FOCUSGUARD_MAIL_FROM", "FocusGuard <no-reply@mail.example.com>")
+
+    ResendMailer().send(email_codes.code_email(EMAIL, "123456", "VERIFY_EMAIL", 15))
+
+    assert sent["url"] == "https://api.resend.com/emails"
+    assert sent["headers"]["Authorization"] == "Bearer re_test_key"
+    assert sent["json"]["from"] == "FocusGuard <no-reply@mail.example.com>"
+    assert sent["json"]["to"] == [EMAIL]
+    assert "123 456" in sent["json"]["html"]
+
+
+def test_a_refused_resend_email_is_an_error_not_a_silent_success(monkeypatch):
+    import httpx
+
+    from focusguard_backend.services.email import ResendMailer
+
+    monkeypatch.setattr(
+        httpx, "post",
+        lambda *a, **k: httpx.Response(403, json={"message": "domain is not verified"}),
+    )
+    monkeypatch.setenv("FOCUSGUARD_RESEND_API_KEY", "re_test_key")
+    with pytest.raises(RuntimeError, match="domain is not verified"):
+        ResendMailer().send(email_codes.code_email(EMAIL, "123456", "VERIFY_EMAIL", 15))
+
+
+def test_an_email_that_failed_to_send_does_not_block_send_again(client, mailer):
+    class Broken:
+        def send(self, message):
+            raise RuntimeError("mail server down")
+
+    set_mailer(Broken())
+    register(client)  # the account is created even though the email failed
+    with get_session_factory()() as db:
+        assert db.query(EmailCode).count() == 0, "the unsent code was withdrawn"
+
+    set_mailer(mailer)
+    client.post("/api/v1/auth/verify-email/resend", json={"email": EMAIL})
+    assert len(mailer.messages) == 1, "send again works straight away"
+    assert client.post(
+        "/api/v1/auth/verify-email", json={"email": EMAIL, "code": code_for(mailer)}
+    ).status_code == 200
