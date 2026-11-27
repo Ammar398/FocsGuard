@@ -9,7 +9,7 @@
  */
 
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { ApiError, api } from '../../api/client'
 import {
@@ -36,6 +36,8 @@ import {
 import { percent, tableClass, tdClass, thClass } from '../../components/manager/helpers'
 import { formatDate, formatDuration } from '../../lib/format'
 import { usePolling } from '../../lib/usePolling'
+import { EmployeeEditor } from '../../components/manager/EmployeeEditor'
+import { formatSchedule } from '../../lib/schedule'
 
 export function EmployeeDetailPage() {
   const id = Number(useParams().id)
@@ -378,6 +380,8 @@ function DevicesCard({ data, onChange }: { data: EmployeeDetail; onChange: () =>
 function ManageCard({ data, onChange }: { data: EmployeeDetail; onChange: () => void }) {
   const departments = usePolling<Department[]>(() => api.manager.departments(), null)
   const [password, setPassword] = useState('')
+  const [editing, setEditing] = useState(false)
+  const navigate = useNavigate()
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -434,6 +438,27 @@ function ManageCard({ data, onChange }: { data: EmployeeDetail; onChange: () => 
             Save
           </Button>
         </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Button variant="primary" onClick={() => setEditing(true)}>
+            Edit details, office hours or remove
+          </Button>
+        </div>
+        {data.office_hours && (
+          <p className="text-sm">
+            Office hours: <strong>{formatSchedule(data.office_hours)}</strong>. FocusGuard starts
+            by itself on their computer at these times.
+          </p>
+        )}
+        {editing && (
+          <EmployeeEditor
+            employee={data}
+            departments={departments.data ?? []}
+            onSaved={onChange}
+            onClose={() => setEditing(false)}
+            onRemoved={() => navigate('/employees')}
+          />
+        )}
 
         <Button
           variant={data.is_active ? 'danger' : 'secondary'}

@@ -8,6 +8,7 @@
 
 import { Suspense, lazy } from 'react'
 import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from 'react-router-dom'
+import { AlertsPopup } from './components/manager/AlertsPopup'
 
 import { AuthProvider } from './auth/AuthContext'
 import { useAuth } from './auth/context'
@@ -120,6 +121,7 @@ function Shell() {
           )}
         </Suspense>
       </main>
+      {manager && <AlertsPopup />}
     </div>
   )
 }

@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, true
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from focusguard_backend.models.base import Base, TimestampMixin
@@ -82,6 +82,14 @@ class User(Base, TimestampMixin):
         Boolean, default=True, server_default=true(), nullable=False
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    #: Employees: office hours set by the manager. On these weekdays (0 = Monday)
+    #: at `work_start` ("HH:MM", the employee's own clock) the employee's
+    #: computer starts a focus session by itself for `work_minutes`. The employee
+    #: can close it; the manager is told and can ask for it to start again.
+    work_days: Mapped[list | None] = mapped_column(JSON)
+    work_start: Mapped[str | None] = mapped_column(String(5))
+    work_minutes: Mapped[int | None] = mapped_column(Integer)
 
     organization: Mapped[Organization | None] = relationship(back_populates="users")
     devices: Mapped[list[Device]] = relationship(back_populates="user")

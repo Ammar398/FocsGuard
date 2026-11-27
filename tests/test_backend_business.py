@@ -651,3 +651,80 @@ def test_new_columns_are_added_to_an_existing_database(tmp_path):
     assert "schedule_minutes" in {c["name"] for c in inspect(engine).get_columns("tasks")}
     assert add_missing_columns(engine) == []
     engine.dispose()
+
+
+# --- editing, removing, office hours and alerts -------------------------------------
+
+
+def test_a_manager_edits_and_removes_an_employee(client):
+    boss = _company(client, "Acme")
+    dev = _employee(client, boss, "dev@acme.example.com", "Dev One")
+    _employee(client, boss, "taken@acme.example.com", "Taken")
+    agent = _enrol(client, boss, dev)
+    task = _task(client, boss, assignee_id=dev)
+
+    clash = client.patch(f"/api/v1/manager/employees/{dev}", headers=boss,
+                         json={"email": "taken@acme.example.com"})
+    assert clash.status_code == 409
+
+    edited = client.patch(f"/api/v1/manager/employees/{dev}", headers=boss, json={
+        "full_name": "Dev Renamed", "email": "New@Acme.example.com", "password": PASSWORD,
+    })
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["email"] == "new@acme.example.com"
+    assert edited.json()["full_name"] == "Dev Renamed" and edited.json()["can_sign_in"]
+    _login(client, "new@acme.example.com")
+
+    other = _company(client, "Globex")
+    assert client.delete(f"/api/v1/manager/employees/{dev}", headers=other).status_code == 404
+
+    assert client.delete(f"/api/v1/manager/employees/{dev}", headers=boss).status_code == 200
+    assert client.get(f"/api/v1/manager/employees/{dev}", headers=boss).status_code == 404
+    assert client.get(f"/api/v1/manager/tasks/{task['id']}", headers=boss).json()[
+        "assignee_id"] is None
+    # Its device is gone too, so it can no longer upload.
+    gone = client.get("/api/v1/agent/tasks", headers={"X-Device-Secret": agent["X-Device-Secret"]})
+    assert gone.status_code == 401
+
+
+def test_office_hours_reach_the_computer_and_an_early_close_reaches_the_manager(client):
+    boss = _company(client, "Acme")
+    dev = _employee(client, boss, "dev@acme.example.com", "Dev One")
+    agent = {"X-Device-Secret": _enrol(client, boss, dev)["X-Device-Secret"]}
+    hours = {"days": [0, 1, 2, 3, 4], "start": "09:00", "minutes": 480}
+
+    saved = client.patch(f"/api/v1/manager/employees/{dev}", headers=boss,
+                         json={"office_hours": hours})
+    assert saved.json()["office_hours"] == hours
+    schedule = client.get("/api/v1/agent/schedule", headers=agent).json()
+    assert schedule == {"office_hours": hours, "restart_alert_id": None}
+
+    raised = client.post("/api/v1/agent/alerts", headers=agent, json={
+        "kind": "CLOSED_EARLY", "window_end": "2026-11-30T12:00:00Z",
+    })
+    assert raised.status_code == 201
+    alerts = client.get("/api/v1/manager/alerts", headers=boss).json()
+    assert len(alerts) == 1 and alerts[0]["employee_name"] == "Dev One"
+    alert_id = alerts[0]["id"]
+
+    other = _company(client, "Globex")
+    assert client.get("/api/v1/manager/alerts", headers=other).json() == []
+    assert client.post(f"/api/v1/manager/alerts/{alert_id}/restart",
+                       headers=other).status_code == 404
+    assert client.post(f"/api/v1/manager/alerts/{alert_id}/dismiss",
+                       headers=other).status_code == 404
+
+    assert client.post(f"/api/v1/manager/alerts/{alert_id}/restart",
+                       headers=boss).status_code == 200
+    assert client.get("/api/v1/agent/schedule", headers=agent).json()[
+        "restart_alert_id"] == alert_id
+
+    assert client.post(f"/api/v1/agent/alerts/{alert_id}/done",
+                       headers=agent).status_code == 204
+    assert client.get("/api/v1/manager/alerts", headers=boss).json() == []
+    assert client.get("/api/v1/agent/schedule", headers=agent).json()[
+        "restart_alert_id"] is None
+
+    cleared = client.patch(f"/api/v1/manager/employees/{dev}", headers=boss,
+                           json={"clear_office_hours": True})
+    assert cleared.json()["office_hours"] is None

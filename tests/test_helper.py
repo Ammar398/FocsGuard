@@ -59,12 +59,30 @@ class FakeClient:
     def assigned_tasks(self) -> list[dict]:
         return FakeClient.tasks
 
+    #: What GET /agent/schedule answers; None means "not supported" (old server).
+    office: dict | None = None
+    alerts: list = []
+
+    def office_schedule(self) -> dict:
+        if FakeClient.office is None:
+            raise AttributeError("no office hours")
+        return FakeClient.office
+
+    def raise_alert(self, kind: str, window_end: str | None) -> int:
+        FakeClient.alerts.append(("raise", kind, window_end))
+        return 1
+
+    def alert_done(self, alert_id: int) -> None:
+        FakeClient.alerts.append(("done", alert_id))
+
 
 @pytest.fixture
 def world(tmp_path, monkeypatch):
     monkeypatch.setenv("FOCUSGUARD_DATA_DIR", str(tmp_path))
     FakeClient.calls = []
     FakeClient.tasks = []
+    FakeClient.office = None
+    FakeClient.alerts = []
     answers: list[bool] = []
     asked: list[tuple[str, str]] = []
     launched: list[list[str]] = []
@@ -589,3 +607,60 @@ def test_live_video_is_bright_and_changing() -> None:
     assert not frames_look_live(black, black)
     assert not frames_look_live(picture, picture)  # a frozen placeholder
     assert frames_look_live(picture, noisy)
+
+
+
+# --- office hours ------------------------------------------------------------------
+
+OFFICE = {"office_hours": {"days": [0, 1, 2, 3, 4], "start": "09:00", "minutes": 480},
+          "restart_alert_id": None}
+
+
+def _office_ready(world) -> None:
+    _employee()
+    call(world, "POST", "/extension/hello", {"version": "0.2.0"}, origin=EXTENSION_ORIGIN)
+    FakeClient.office = dict(OFFICE)
+
+
+def test_office_hours_start_a_session_by_themselves(world) -> None:
+    _office_ready(world)
+    world["answers"].append(True)
+    note = world["helper"].scheduled_tick(MONDAY_9_30)
+    assert note["ok"] is True and note["title"] == "Office hours"
+    assert world["launched"][0][:2] == ["--name", "Office hours"]
+    assert "--seconds" in world["launched"][0]
+    assert world["helper"].scheduled_tick(MONDAY_9_30.replace(minute=40)) is None
+    assert len(world["launched"]) == 1
+
+
+def test_closing_office_hours_early_tells_the_manager_and_a_restart_starts_it(
+    world, monkeypatch
+) -> None:
+    import time as time_module
+
+    _office_ready(world)
+    world["answers"].append("always")
+    world["helper"].scheduled_tick(MONDAY_9_30)
+    assert len(world["launched"]) == 1
+
+    # The employee closed the window: no session runs, well before 17:30.
+    real = time_module.monotonic()
+    monkeypatch.setattr(
+        "focusguard_agent.helper.server.time.monotonic", lambda: real + 60
+    )
+    world["helper"].scheduled_tick(MONDAY_9_30.replace(hour=10))
+    assert FakeClient.alerts[0][:2] == ("raise", "CLOSED_EARLY")
+
+    # The manager pressed Restart.
+    FakeClient.office = {**OFFICE, "restart_alert_id": 1}
+    note = world["helper"].scheduled_tick(MONDAY_9_30.replace(hour=10, minute=1))
+    assert note["restart"] is True and note["ok"] is True
+    assert len(world["launched"]) == 2
+    assert ("done", 1) in FakeClient.alerts
+
+
+def test_an_old_server_without_office_hours_changes_nothing(world) -> None:
+    _employee()
+    FakeClient.office = None
+    assert world["helper"].scheduled_tick(MONDAY_9_30) is None
+    assert world["launched"] == []

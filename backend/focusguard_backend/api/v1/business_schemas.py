@@ -71,6 +71,11 @@ class EmployeeCreate(_Request):
 
 class EmployeeUpdate(_Request):
     full_name: str | None = Field(default=None, min_length=1, max_length=200)
+    #: Changes the address the employee signs in with.
+    email: EmailStr | None = None
+    #: Office hours: the employee's computer starts a session by itself then.
+    office_hours: TaskSchedule | None = None
+    clear_office_hours: bool = False
     department_id: int | None = None
     #: Explicit, because "department_id: null" must be able to mean "remove".
     clear_department: bool = False
@@ -137,6 +142,7 @@ class EmployeeOut(BaseModel):
     open_tasks: int
     current_task: TaskBrief | None = None
     today: WindowStats
+    office_hours: TaskSchedule | None = None
 
 
 class ConsentOut(BaseModel):
@@ -440,3 +446,39 @@ class AgentTaskOut(BaseModel):
 
 
 EmployeeDetail.model_rebuild()
+
+
+# --- office hours and alerts ----------------------------------------------------
+
+
+class AgentScheduleOut(BaseModel):
+    """What an employee's computer needs to run office hours by itself."""
+
+    office_hours: TaskSchedule | None = None
+    #: An alert the manager asked to restart the session for, if any.
+    restart_alert_id: int | None = None
+
+
+class AgentAlertIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str = Field(pattern=r"^CLOSED_EARLY$")
+    window_end: datetime | None = None
+
+
+class AgentAlertOut(BaseModel):
+    id: int
+
+
+class FocusAlertOut(BaseModel):
+    id: int
+    kind: str
+    user_id: int
+    employee_name: str
+    created_at: datetime
+    window_end: datetime | None
+    restart_requested_at: datetime | None
+
+
+EmployeeUpdate.model_rebuild()
+EmployeeOut.model_rebuild()

@@ -419,6 +419,10 @@ class FocusGuardHelper:
         self._schedule_cache: tuple[float, list[dict[str, Any]]] | None = None
         #: What the scheduler last did, for the portal.
         self._schedule_note: dict[str, Any] | None = None
+        #: The office hours from the server: a task-shaped dict, or None.
+        self._office: dict[str, Any] | None = None
+        #: The office-hours session this Helper started: (monotonic start, window end).
+        self._office_run: tuple[float, datetime] | None = None
         self._scheduler_stop = threading.Event()
         self._confirm = confirm
         self._launcher = launcher
@@ -565,7 +569,9 @@ class FocusGuardHelper:
             "extension": self.extension_status(),
             "schedule": {
                 "next": next_scheduled(
-                    self._schedule_cache[1] if self._schedule_cache else [], datetime.now()
+                    [*(self._schedule_cache[1] if self._schedule_cache else []),
+                     *([self._office] if self._office else [])],
+                    datetime.now(),
                 ),
                 "last": self._schedule_note,
             },
@@ -683,6 +689,9 @@ class FocusGuardHelper:
 
         today = now.date().isoformat()
         handled = self._handled(today)
+        office = self._office_tick(now, credential, handled, today)
+        if office is not None:
+            return office
         for task in self._scheduled_tasks():
             window = due_now(task, now)
             if window is None:
@@ -713,6 +722,97 @@ class FocusGuardHelper:
                         "started" if note.get("ok") else note.get("error"))
             return note
         return None
+
+    # -- office hours ---------------------------------------------------------
+
+    def _fetch_office(self, credential: Any) -> dict[str, Any] | None:
+        """Office hours and any restart request, straight from the server."""
+        try:
+            with self._client_factory(credential.backend_url, credential=credential) as client:
+                info = client.office_schedule()
+        except (TasksUnavailable, AttributeError):
+            return None
+        hours = info.get("office_hours")
+        self._office = (
+            {"id": "office", "title": "Office hours", "schedule_days": hours["days"],
+             "schedule_time": hours["start"], "schedule_minutes": hours["minutes"]}
+            if hours else None
+        )
+        return info
+
+    def _client_call(self, credential: Any, action: Callable[[Any], Any]) -> None:
+        try:
+            with self._client_factory(credential.backend_url, credential=credential) as client:
+                action(client)
+        except (TasksUnavailable, AttributeError):
+            logger.warning("Could not reach the server for office hours", exc_info=True)
+
+    def _start_office(self, now: datetime, end: datetime, note: dict[str, Any]) -> None:
+        seconds = int((end - now).total_seconds())
+        try:
+            self.start_session({"name": "Office hours"}, scheduled_seconds=seconds)
+            self._office_run = (time.monotonic(), end)
+            note.update(ok=True, minutes=round(seconds / 60))
+        except HelperError as error:
+            note.update(ok=False, error=error.message)
+
+    def _office_tick(
+        self, now: datetime, credential: Any, handled: set[str], today: str
+    ) -> dict[str, Any] | None:
+        """Office hours: start them, notice an early close, act on a restart."""
+        running = self._running_session() is not None
+
+        # 1. The office session this Helper started is gone before the hours end.
+        if self._office_run is not None and not running:
+            started, end = self._office_run
+            if time.monotonic() - started > 20:
+                self._office_run = None
+                if now < end - timedelta(minutes=1):
+                    window_end = end.astimezone(UTC).isoformat()
+                    self._client_call(
+                        credential, lambda client: client.raise_alert("CLOSED_EARLY", window_end)
+                    )
+                    logger.info("Office hours closed early; the manager was told")
+                    self._schedule_note = {
+                        "task_id": "office", "title": "Office hours", "ok": False,
+                        "at": now.isoformat(timespec="minutes"),
+                        "error": "You closed it before your office hours ended; your manager "
+                                 "was told.",
+                    }
+
+        info = self._fetch_office(credential)
+        if info is None or self._office is None:
+            return None
+        window = due_now(self._office, now)
+
+        # 2. The manager asked for it to start again.
+        restart = info.get("restart_alert_id")
+        if restart is not None and not running:
+            note: dict[str, Any] = {"task_id": "office", "title": "Office hours",
+                                    "at": now.isoformat(timespec="minutes"), "restart": True}
+            if window is None:
+                note.update(ok=False, error="Your manager asked to restart, but office hours "
+                                            "are over.")
+            else:
+                self._start_office(now, window[1], note)
+            self._client_call(credential, lambda client: client.alert_done(restart))
+            self._schedule_note = note
+            return note
+
+        # 3. Office hours have begun.
+        if window is None or running:
+            return None
+        key = f"office@{window[0].isoformat(timespec='minutes')}"
+        if key in handled:
+            return None
+        handled.add(key)
+        self._save_handled(today, handled)
+        note = {"task_id": "office", "title": "Office hours",
+                "at": now.isoformat(timespec="minutes")}
+        self._start_office(now, window[1], note)
+        self._schedule_note = note
+        logger.info("Office hours: %s", "started" if note.get("ok") else note.get("error"))
+        return note
 
     def start_scheduler(self, interval: float = 30.0) -> threading.Thread:
         def loop() -> None:

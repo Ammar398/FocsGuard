@@ -203,6 +203,41 @@ class BackendClient:
         body = response.json()
         return body if isinstance(body, list) else []
 
+    # -- office hours ------------------------------------------------------
+
+    def _device_request(
+        self, method: str, path: str, payload: dict[str, Any] | None = None
+    ) -> requests.Response:
+        if self._credential is None:
+            raise TasksUnavailable("This machine is not enrolled.")
+        try:
+            return self._http.request(
+                method, self._url(path), headers=self._credential.headers,
+                json=payload, timeout=self._timeout,
+            )
+        except requests.RequestException as error:
+            raise TasksUnavailable(f"Could not reach the backend at {self._base}.") from error
+
+    def office_schedule(self) -> dict[str, Any]:
+        """{"office_hours": {...} | None, "restart_alert_id": int | None}."""
+        response = self._device_request("GET", "/agent/schedule")
+        if response.status_code != 200:
+            raise TasksUnavailable(_detail(response))
+        body = response.json()
+        return body if isinstance(body, dict) else {}
+
+    def raise_alert(self, kind: str, window_end: str | None) -> int | None:
+        """Tell the manager, e.g. that office hours were closed early."""
+        response = self._device_request(
+            "POST", "/agent/alerts", {"kind": kind, "window_end": window_end}
+        )
+        if response.status_code != 201:
+            raise TasksUnavailable(_detail(response))
+        return response.json().get("id")
+
+    def alert_done(self, alert_id: int) -> None:
+        self._device_request("POST", f"/agent/alerts/{int(alert_id)}/done")
+
     def _post(self, path: str, payload: dict[str, Any], expect: int) -> UploadResult:
         if self._credential is None:
             return UploadResult(ok=False, detail="not enrolled", retryable=False)

@@ -50,6 +50,7 @@ from focusguard_backend.api.v1.business_schemas import (
     EmployeeDetail,
     EmployeeOut,
     EmployeeUpdate,
+    FocusAlertOut,
     ManagerDashboard,
     OrganizationOut,
     ProjectCreate,
@@ -78,7 +79,7 @@ from focusguard_backend.auth.passwords import (
 )
 from focusguard_backend.database.session import get_db
 from focusguard_backend.models.base import as_utc
-from focusguard_backend.models.business import Project, Task
+from focusguard_backend.models.business import FocusAlert, Project, Task
 from focusguard_backend.models.identity import Department, Device, Organization, User
 from focusguard_backend.models.telemetry import ActivityEvent, FocusSession, VisionEvent
 from focusguard_backend.repositories.analytics import AnalyticsRepository
@@ -346,7 +347,15 @@ def employee_out(
             else None
         ),
         today=window_stats(today.get(user.id)),
+        office_hours=office_hours_of(user),
     )
+
+
+def office_hours_of(user: User) -> TaskSchedule | None:
+    if not user.work_days or not user.work_start or not user.work_minutes:
+        return None
+    return TaskSchedule(days=list(user.work_days), start=user.work_start,
+                        minutes=user.work_minutes)
 
 
 def performance_out(performance: CategoryPerformance) -> CategoryPerformanceOut:
@@ -687,6 +696,21 @@ def update_employee(
 
     if payload.full_name is not None:
         employee.full_name = payload.full_name.strip()
+    if payload.email is not None:
+        email = payload.email.strip().lower()
+        if email != employee.email:
+            taken = db.scalar(select(User.id).where(User.email == email, User.id != employee.id))
+            if taken is not None:
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT, detail="That email address is already in use."
+                )
+            employee.email = email
+    if payload.clear_office_hours:
+        employee.work_days = employee.work_start = employee.work_minutes = None
+    elif payload.office_hours is not None:
+        employee.work_days = list(payload.office_hours.days)
+        employee.work_start = payload.office_hours.start
+        employee.work_minutes = payload.office_hours.minutes
     if payload.clear_department:
         employee.department_id = None
     elif payload.department_id is not None:
@@ -710,6 +734,101 @@ def update_employee(
         repo.current_tasks(),
         {},
     )
+
+
+@router.delete("/employees/{employee_id}", response_model=MessageResponse)
+def delete_employee(
+    employee_id: int,
+    repo: BusinessRepository = Depends(business_repository),
+    db: Session = Depends(get_db),
+) -> MessageResponse:
+    """Remove an employee for good: their account, devices, sessions and scores.
+
+    Tasks assigned to them stay, unassigned. Deactivating instead keeps the
+    history; this is for people added by mistake or who have left.
+    """
+    from sqlalchemy import delete
+
+    employee = repo.get_employee(employee_id)
+    if employee is None:
+        raise _not_found("Employee")
+    # Their computers stop being able to upload at once; database cascades then
+    # remove everything else that belongs to the user.
+    db.execute(delete(Device).where(Device.user_id == employee.id))
+    db.execute(delete(User).where(User.id == employee.id))
+    db.commit()
+    logger.info("Employee %d removed from organisation %d", employee_id, repo.organization_id)
+    return MessageResponse(detail="Employee removed.")
+
+
+# --- alerts: office hours closed early -------------------------------------------
+
+
+@router.get("/alerts", response_model=list[FocusAlertOut])
+def open_alerts(
+    repo: BusinessRepository = Depends(business_repository),
+    db: Session = Depends(get_db),
+) -> list[FocusAlertOut]:
+    """Unresolved alerts, newest first. The portal polls this for its pop-up."""
+    alerts = db.scalars(
+        select(FocusAlert)
+        .where(FocusAlert.organization_id == repo.organization_id,
+               FocusAlert.resolved_at.is_(None))
+        .order_by(FocusAlert.created_at.desc())
+        .limit(20)
+    ).all()
+    names = {
+        user.id: user.full_name or user.email
+        for user in db.scalars(select(User).where(User.organization_id == repo.organization_id))
+    }
+    return [
+        FocusAlertOut(
+            id=alert.id, kind=alert.kind, user_id=alert.user_id,
+            employee_name=names.get(alert.user_id, "An employee"),
+            created_at=as_utc(alert.created_at) or alert.created_at,
+            window_end=as_utc(alert.window_end),
+            restart_requested_at=as_utc(alert.restart_requested_at),
+        )
+        for alert in alerts
+    ]
+
+
+def _alert_or_404(db: Session, repo: BusinessRepository, alert_id: int) -> FocusAlert:
+    alert = db.scalar(select(FocusAlert).where(
+        FocusAlert.id == alert_id, FocusAlert.organization_id == repo.organization_id
+    ))
+    if alert is None:
+        raise _not_found("Alert")
+    return alert
+
+
+@router.post("/alerts/{alert_id}/restart", response_model=MessageResponse)
+def restart_from_alert(
+    alert_id: int,
+    repo: BusinessRepository = Depends(business_repository),
+    db: Session = Depends(get_db),
+) -> MessageResponse:
+    """Ask the employee's computer to start the office-hours session again."""
+    alert = _alert_or_404(db, repo, alert_id)
+    if alert.resolved_at is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="This alert is already closed.")
+    alert.restart_requested_at = datetime.now(UTC)
+    db.commit()
+    return MessageResponse(
+        detail="Sent. The session starts again on their computer within a minute."
+    )
+
+
+@router.post("/alerts/{alert_id}/dismiss", response_model=MessageResponse)
+def dismiss_alert(
+    alert_id: int,
+    repo: BusinessRepository = Depends(business_repository),
+    db: Session = Depends(get_db),
+) -> MessageResponse:
+    alert = _alert_or_404(db, repo, alert_id)
+    alert.resolved_at = alert.resolved_at or datetime.now(UTC)
+    db.commit()
+    return MessageResponse(detail="Dismissed.")
 
 
 @router.get("/employees/{employee_id}/strengths", response_model=StrengthReport)

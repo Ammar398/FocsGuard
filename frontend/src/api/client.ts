@@ -34,9 +34,10 @@
 
 import type {
   Department,
-  EmployeeDetail,
   Employee,
+  EmployeeDetail,
   EnrollmentToken,
+  FocusAlert,
   ManagerDashboard,
   Organization,
   Project,
@@ -45,6 +46,7 @@ import type {
   Task,
   TaskDetail,
   TaskInput,
+  TaskSchedule,
 } from './managerTypes'
 import type {
   RecommendationItem,
@@ -394,8 +396,18 @@ export const api = {
         clear_department?: boolean
         is_active?: boolean
         password?: string
+        email?: string
+        office_hours?: TaskSchedule | null
+        clear_office_hours?: boolean
       },
     ) => request<Employee>(`/manager/employees/${id}`, { method: 'PATCH', body }),
+    deleteEmployee: (id: number) =>
+      request<{ detail: string }>(`/manager/employees/${id}`, { method: 'DELETE' }),
+    alerts: () => request<FocusAlert[]>('/manager/alerts'),
+    restartAlert: (id: number) =>
+      request<{ detail: string }>(`/manager/alerts/${id}/restart`, { method: 'POST' }),
+    dismissAlert: (id: number) =>
+      request<{ detail: string }>(`/manager/alerts/${id}/dismiss`, { method: 'POST' }),
     strengths: (id: number) => request<StrengthReport>(`/manager/employees/${id}/strengths`),
 
     projects: () => request<Project[]>('/manager/projects'),

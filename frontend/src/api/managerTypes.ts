@@ -83,6 +83,18 @@ export interface Employee {
   open_tasks: number
   current_task: TaskBrief | null
   today: WindowStats
+  /** Office hours: the employee's computer starts a session by itself. */
+  office_hours?: TaskSchedule | null
+}
+
+export interface FocusAlert {
+  id: number
+  kind: string
+  user_id: number
+  employee_name: string
+  created_at: string
+  window_end: string | null
+  restart_requested_at: string | null
 }
 
 export interface DeviceSummary {

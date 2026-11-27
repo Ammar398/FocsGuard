@@ -22,13 +22,16 @@ import {
   TextField,
 } from '../../components/manager/ui'
 import { tableClass, tdClass, thClass } from '../../components/manager/helpers'
+import { EmployeeEditor } from '../../components/manager/EmployeeEditor'
 import { formatDuration } from '../../lib/format'
+import { formatSchedule } from '../../lib/schedule'
 import { usePolling } from '../../lib/usePolling'
 
 export function EmployeesPage() {
   const employees = usePolling<Employee[]>(() => api.manager.employees(), 30_000)
   const departments = usePolling<Department[]>(() => api.manager.departments(), null)
   const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState<Employee | null>(null)
 
   return (
     <div className="space-y-6">
@@ -68,6 +71,9 @@ export function EmployeesPage() {
                   <th className={thClass}>Today</th>
                   <th className={thClass}>Focus today</th>
                   <th className={thClass}>Portal</th>
+                  <th className={thClass}>
+                    <span className="sr-only">Actions</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -95,6 +101,14 @@ export function EmployeesPage() {
                     </td>
                     <td data-label="Portal" className={`${tdClass} text-xs text-[var(--color-muted)]`}>
                       {employee.can_sign_in ? 'Can sign in' : 'Agent only'}
+                      {employee.office_hours && (
+                        <div className="mt-0.5 text-[var(--color-accent)]">
+                          Office: {formatSchedule(employee.office_hours)}
+                        </div>
+                      )}
+                    </td>
+                    <td data-label="" className={tdClass}>
+                      <Button onClick={() => setEditing(employee)}>Edit</Button>
                     </td>
                   </tr>
                 ))}
@@ -103,6 +117,15 @@ export function EmployeesPage() {
           </div>
         )}
       </Card>
+
+      {editing && (
+        <EmployeeEditor
+          employee={editing}
+          departments={departments.data ?? []}
+          onSaved={() => employees.refresh()}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </div>
   )
 }

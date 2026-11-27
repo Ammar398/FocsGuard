@@ -116,3 +116,33 @@ class Task(Base, TimestampMixin):
         Index("ix_tasks_org_status", "organization_id", "status"),
         Index("ix_tasks_assignee_category", "assignee_id", "category"),
     )
+
+
+class FocusAlert(Base, TimestampMixin):
+    """Something about an employee's office-hours session the manager should see.
+
+    Today one kind: CLOSED_EARLY - the employee closed the session that started
+    by itself for their office hours, before the hours ended. The manager can
+    dismiss it, or ask the employee's computer to start the session again
+    (`restart_requested_at`); the computer picks that up and marks it resolved.
+    The employee is asked on their computer as for any start, and may close it
+    again.
+    """
+
+    __tablename__ = "focus_alerts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    device_id: Mapped[int | None] = mapped_column(
+        ForeignKey("devices.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    #: When the office hours that were cut short end.
+    window_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    restart_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

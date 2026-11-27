@@ -497,6 +497,11 @@ def test_every_org_scoped_route_is_covered_here(two_company_api) -> None:
         "/api/v1/manager/employees",
         "/api/v1/manager/employees/{employee_id}",
         "/api/v1/manager/employees/{employee_id}/strengths",
+        # Office-hours alerts: cross-tenant checks are in
+        # tests/test_backend_business.py (another company sees none and gets 404).
+        "/api/v1/manager/alerts",
+        "/api/v1/manager/alerts/{alert_id}/restart",
+        "/api/v1/manager/alerts/{alert_id}/dismiss",
         "/api/v1/manager/projects",
         "/api/v1/manager/projects/{project_id}",
         "/api/v1/manager/tasks",

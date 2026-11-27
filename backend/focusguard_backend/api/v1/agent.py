@@ -43,7 +43,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from focusguard_backend.api.v1.business_schemas import AgentTaskOut
+from focusguard_backend.api.v1.business_schemas import (
+    AgentAlertIn,
+    AgentAlertOut,
+    AgentScheduleOut,
+    AgentTaskOut,
+    TaskSchedule,
+)
 from focusguard_backend.api.v1.schemas import (
     EventBatchUpload,
     HeartbeatUpload,
@@ -52,8 +58,8 @@ from focusguard_backend.api.v1.schemas import (
 from focusguard_backend.auth.dependencies import get_current_device
 from focusguard_backend.database.session import get_db
 from focusguard_backend.models.base import as_utc
-from focusguard_backend.models.business import Project, Task
-from focusguard_backend.models.identity import Device
+from focusguard_backend.models.business import FocusAlert, Project, Task
+from focusguard_backend.models.identity import Device, User
 from focusguard_backend.models.telemetry import DeviceHeartbeat
 from focusguard_backend.repositories.telemetry import Scope, TelemetryRepository
 from focusguard_shared.constants import OPEN_TASK_STATUSES, TaskStatus
@@ -270,3 +276,75 @@ def assigned_tasks(
         )
         for task in tasks
     ]
+
+
+
+# --- office hours -----------------------------------------------------------------
+
+
+@router.get("/schedule", response_model=AgentScheduleOut)
+def office_schedule(
+    device: Device = Depends(get_current_device),
+    db: Session = Depends(get_db),
+) -> AgentScheduleOut:
+    """This employee's office hours, and whether the manager asked for a restart."""
+    if device.organization_id is None:
+        db.commit()
+        return AgentScheduleOut()
+    user = db.get(User, device.user_id)
+    hours = None
+    if user is not None and user.work_days and user.work_start and user.work_minutes:
+        hours = TaskSchedule(days=list(user.work_days), start=user.work_start,
+                             minutes=user.work_minutes)
+    restart = db.scalar(
+        select(FocusAlert.id).where(
+            FocusAlert.user_id == device.user_id,
+            FocusAlert.organization_id == device.organization_id,
+            FocusAlert.restart_requested_at.is_not(None),
+            FocusAlert.resolved_at.is_(None),
+        ).order_by(FocusAlert.restart_requested_at.desc())
+    )
+    db.commit()  # persists last_seen_at
+    return AgentScheduleOut(office_hours=hours, restart_alert_id=restart)
+
+
+@router.post("/alerts", response_model=AgentAlertOut, status_code=status.HTTP_201_CREATED)
+def raise_alert(
+    payload: AgentAlertIn,
+    device: Device = Depends(get_current_device),
+    db: Session = Depends(get_db),
+) -> AgentAlertOut:
+    """The employee closed their office-hours session early: tell the manager."""
+    if device.organization_id is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Only for organisations.")
+    # One open alert per person: a second early close replaces nothing new.
+    for old in db.scalars(select(FocusAlert).where(
+        FocusAlert.user_id == device.user_id, FocusAlert.resolved_at.is_(None)
+    )):
+        old.resolved_at = datetime.now(UTC)
+    alert = FocusAlert(
+        organization_id=device.organization_id,
+        user_id=device.user_id,
+        device_id=device.id,
+        kind=payload.kind,
+        window_end=payload.window_end,
+    )
+    db.add(alert)
+    db.commit()
+    return AgentAlertOut(id=alert.id)
+
+
+@router.post("/alerts/{alert_id}/done", status_code=status.HTTP_204_NO_CONTENT)
+def alert_done(
+    alert_id: int,
+    device: Device = Depends(get_current_device),
+    db: Session = Depends(get_db),
+) -> None:
+    """The computer restarted the session (or gave up): close the alert."""
+    alert = db.scalar(select(FocusAlert).where(
+        FocusAlert.id == alert_id, FocusAlert.user_id == device.user_id
+    ))
+    if alert is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Alert not found.")
+    alert.resolved_at = alert.resolved_at or datetime.now(UTC)
+    db.commit()
