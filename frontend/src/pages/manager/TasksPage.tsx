@@ -36,7 +36,9 @@ import {
   TextField,
 } from '../../components/manager/ui'
 import { parseRules, tableClass, tdClass, thClass } from '../../components/manager/helpers'
+import { ScheduleToggle, scheduleProblem } from '../../components/manager/ScheduleEditor'
 import { formatDate } from '../../lib/format'
+import type { Schedule } from '../../lib/schedule'
 import { usePolling } from '../../lib/usePolling'
 
 export function TasksPage() {
@@ -146,6 +148,7 @@ function CreateTask() {
   const [productive, setProductive] = useState('')
   const [neutral, setNeutral] = useState('slack, outlook')
   const [distracting, setDistracting] = useState('')
+  const [schedule, setSchedule] = useState<Schedule | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -171,6 +174,7 @@ function CreateTask() {
         // what the manager typed it in.
         deadline: deadline ? new Date(deadline).toISOString() : null,
         expected_minutes: expected ? Number(expected) : null,
+        schedule,
         productive_rules: parseRules(productive),
         neutral_rules: parseRules(neutral),
         distracting_rules: parseRules(distracting),
@@ -236,6 +240,9 @@ function CreateTask() {
             onChange={setExpected}
           />
           <div className="sm:col-span-2">
+            <ScheduleToggle value={schedule} onChange={setSchedule} />
+          </div>
+          <div className="sm:col-span-2">
             <TextArea
               label="Productive apps and sites"
               value={productive}
@@ -254,7 +261,8 @@ function CreateTask() {
             <ErrorBanner message={error} />
           </div>
           <div>
-            <Button type="submit" variant="primary" disabled={busy || !category}>
+            <Button type="submit" variant="primary" disabled={busy || !category || (schedule !== null && scheduleProblem(schedule) !== null)}
+            >
               {busy ? 'Creating…' : 'Create task'}
             </Button>
           </div>

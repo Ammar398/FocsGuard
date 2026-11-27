@@ -96,6 +96,7 @@ def world(tmp_path, monkeypatch):
         return "once" if answer else "no"
 
     readiness = {"value": CameraReadiness(ready=True, device="Camo", message="ok")}
+    opened: list[tuple] = []
 
     helper = FocusGuardHelper(
         settings=AgentSettings(),
@@ -105,12 +106,14 @@ def world(tmp_path, monkeypatch):
         camera_launcher=open_camera,
         camera_dialog=camera_dialog,
         camera_probe=lambda: readiness["value"],
+        extension_opener=lambda folder, browser: opened.append((folder, browser)),
     )
     server = HelperServer(helper, port=0)
     assert server.start()
     yield {
         "port": server.port, "answers": answers, "asked": asked,
         "launched": launched, "cameras": cameras, "readiness": readiness,
+        "opened": opened, "helper": helper,
     }
     server.stop()
 
@@ -414,3 +417,140 @@ def test_a_real_webcam_needs_no_app() -> None:
 def test_a_running_phone_camera_app_is_ready() -> None:
     readiness = check_camera("Camo", devices=["Camo", "DroidCam Video"], processes={"camostudio"})
     assert readiness.ready and readiness.app_running is True and readiness.device == "Camo"
+
+
+# --- the browser extension ------------------------------------------------------
+
+from datetime import datetime  # noqa: E402
+
+from focusguard_agent.helper.server import (  # noqa: E402
+    EXTENSION_ORIGIN,
+    due_now,
+    next_scheduled,
+)
+from focusguard_agent.ipc.server import load_or_create_token  # noqa: E402
+
+
+def _employee() -> None:
+    save_credential(DeviceCredential(
+        "dev", "secret", "http://127.0.0.1:8000", user_id=7, organization_id=3,
+    ))
+
+
+def test_only_the_extension_can_pair_itself_and_it_gets_the_agent_token(world) -> None:
+    for origin in (PORTAL, "https://evil.example.com", None):
+        status, _, _ = call(world, "POST", "/extension/hello", {"version": "0.2.0"}, origin=origin)
+        assert status == 403
+
+    status, body, _ = call(world, "POST", "/extension/hello",
+                           {"version": "0.2.0", "browser": "edge", "enabled": True},
+                           origin=EXTENSION_ORIGIN)
+    assert status == 200 and body["token"] == load_or_create_token()
+
+    _, state, _ = call(world, "GET", "/status")
+    extension = state["extension"]
+    assert extension["installed"] and extension["connected"] and extension["enabled"]
+    assert extension["browser"] == "edge" and extension["version"] == "0.2.0"
+
+
+def test_the_extension_popup_may_read_the_status(world) -> None:
+    status, body, response = call(world, "GET", "/status", origin=EXTENSION_ORIGIN)
+    assert status == 200 and body["extension"]["installed"] is False
+    assert response.getheader("Access-Control-Allow-Origin") == EXTENSION_ORIGIN
+
+
+def test_a_paused_extension_shows_as_paused(world) -> None:
+    call(world, "POST", "/extension/hello", {"enabled": False}, origin=EXTENSION_ORIGIN)
+    _, state, _ = call(world, "GET", "/status")
+    assert state["extension"]["installed"] and state["extension"]["enabled"] is False
+
+
+def test_employees_cannot_start_without_the_extension(world) -> None:
+    _employee()
+    FakeClient.tasks = [{"id": 12, "title": "Build REST API"}]
+    status, body, _ = call(world, "POST", "/sessions/start", {"assigned_task_id": 12})
+    assert status == 412 and body["extension_required"] is True
+    assert world["asked"] == [] and world["launched"] == []
+
+    call(world, "POST", "/extension/hello", {"version": "0.2.0"}, origin=EXTENSION_ORIGIN)
+    world["answers"].append(True)
+    status, _, _ = call(world, "POST", "/sessions/start", {"assigned_task_id": 12})
+    assert status == 200 and world["launched"]
+
+
+def test_extension_setup_opens_the_folder_for_the_portal_only(world) -> None:
+    status, _, _ = call(world, "POST", "/extension/setup", {"browser": "chrome"},
+                        origin="https://evil.example.com")
+    assert status == 403 and world["opened"] == []
+
+    status, body, _ = call(world, "POST", "/extension/setup", {"browser": "edge"})
+    assert status == 200 and body["browser"] == "edge"
+    folder, browser = world["opened"][0]
+    assert (folder / "manifest.json").is_file() and browser == "edge"
+
+
+# --- scheduled work time -------------------------------------------------------
+
+MONDAY_9_30 = datetime(2026, 11, 30, 9, 30)  # a Monday
+SCHEDULED = {"id": 12, "title": "Build REST API", "schedule_days": [0, 1, 2, 3, 4],
+             "schedule_time": "09:00", "schedule_minutes": 120}
+
+
+def test_a_window_is_due_only_inside_it_on_its_days() -> None:
+    assert due_now(SCHEDULED, MONDAY_9_30) is not None
+    assert due_now(SCHEDULED, MONDAY_9_30.replace(hour=8)) is None
+    assert due_now(SCHEDULED, MONDAY_9_30.replace(hour=10, minute=59, second=30)) is None
+    assert due_now(SCHEDULED, datetime(2026, 12, 5, 9, 30)) is None  # Saturday
+    assert due_now({"id": 1, "title": "x"}, MONDAY_9_30) is None
+
+
+def test_the_next_scheduled_session_rolls_over_the_weekend() -> None:
+    friday_noon = datetime(2026, 12, 4, 12, 0)
+    upcoming = next_scheduled([SCHEDULED], friday_noon)
+    assert upcoming["starts_at"] == "2026-12-07T09:00" and upcoming["now"] is False
+    assert next_scheduled([SCHEDULED], MONDAY_9_30)["now"] is True
+
+
+def test_a_scheduled_task_starts_by_itself_for_the_rest_of_its_window(world) -> None:
+    _employee()
+    call(world, "POST", "/extension/hello", {"version": "0.2.0"}, origin=EXTENSION_ORIGIN)
+    FakeClient.tasks = [SCHEDULED]
+    world["answers"].append(True)
+
+    note = world["helper"].scheduled_tick(MONDAY_9_30)
+    assert note["ok"] is True and note["minutes"] == 90
+    assert world["launched"][0] == [
+        "--name", "Build REST API", "--assigned-task", "12",
+        "--seconds", "5400", "--preview",
+    ]
+    assert "scheduled work time" in world["asked"][0][1]
+
+    # Closed early (or still running): never started again in the same window.
+    assert world["helper"].scheduled_tick(MONDAY_9_30.replace(minute=45)) is None
+    assert len(world["launched"]) == 1
+
+
+def test_a_declined_scheduled_start_is_not_asked_again(world) -> None:
+    _employee()
+    call(world, "POST", "/extension/hello", {}, origin=EXTENSION_ORIGIN)
+    FakeClient.tasks = [SCHEDULED]
+    note = world["helper"].scheduled_tick(MONDAY_9_30)
+    assert note["ok"] is False and world["launched"] == []
+    assert world["helper"].scheduled_tick(MONDAY_9_30.replace(minute=31)) is None
+    assert len(world["asked"]) == 1
+    _, state, _ = call(world, "GET", "/status")
+    assert state["schedule"]["last"]["ok"] is False
+
+
+def test_without_the_extension_the_scheduled_start_says_why(world) -> None:
+    _employee()
+    FakeClient.tasks = [SCHEDULED]
+    note = world["helper"].scheduled_tick(MONDAY_9_30)
+    assert note["ok"] is False and "browser extension" in note["error"]
+    assert world["asked"] == []
+
+
+def test_students_have_no_schedule(world) -> None:
+    save_credential(DeviceCredential("dev", "secret", "http://127.0.0.1:8000", user_id=7))
+    FakeClient.tasks = [SCHEDULED]
+    assert world["helper"].scheduled_tick(MONDAY_9_30) is None

@@ -1,22 +1,24 @@
 {
   "manifest_version": 3,
   "name": "FocusGuard",
-  "version": "0.1.0",
-  "description": "Reports the domain of your active tab to the local FocusGuard agent. Never the full URL.",
-
-  "permissions": ["tabs", "storage", "alarms"],
-
-  "host_permissions": ["http://127.0.0.1/*"],
-
+  "version": "0.2.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzP/g8brKv3rT3Ez/hAC849AqNtB5ZOSCo7sKAjP8alytk4xWd5lpqwwEwltqhhQatjUuU+CHpdQ0E58Rj2LcNzYoAvL+1dnJMUSqmje0tqLzoWYuzJnQirb59zuKIit71VM5CbNayB5dEM6fOYU0ChOMgfRCJwwiju80QdxX2rMV4B7QaTBUA97+qlIB4batdNfvT1aNq7EqktGn0M3YPOCSkXmpjVNfC8oRQ7gzvjObWHb+RAH5MC9Wjt1eksdGKa48CrkCdzbI11auFGIVRuflQB17hr62a5HtmOYH8uhwmEjDzjoUD1pmpIXd6kytPm2/LfHID1PEnmbSInaT1QIDAQAB",
+  "description": "Tells FocusGuard on this computer which website your active tab is on (the domain only, never the full address).",
+  "permissions": [
+    "tabs",
+    "storage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },
-
   "action": {
     "default_popup": "popup.html",
     "default_title": "FocusGuard monitoring status"
   },
-
   "icons": {
     "128": "icon128.png"
   }

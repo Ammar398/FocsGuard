@@ -32,6 +32,7 @@ COPY backend/ backend/
 # Not run here: packed into the "Download FocusGuard" installer (api/v1/downloads.py).
 COPY requirements/agent.txt requirements/
 COPY desktop_agent/ desktop_agent/
+COPY browser_extension/src/ browser_extension/src/
 COPY --from=portal /app/frontend/dist frontend/dist
 
 # Never run a web server as root.

@@ -25,6 +25,8 @@
  */
 
 const AGENT_URL = "http://127.0.0.1:48213";
+/** The FocusGuard Helper: always running, hands out the pairing token. */
+const HELPER_URL = "http://127.0.0.1:48214";
 const POLL_ALARM = "focusguard-poll";
 const POLL_MINUTES = 0.25; // ~15s; MV3 service workers sleep, so an alarm is required
 
@@ -81,6 +83,36 @@ async function getSettings() {
   };
 }
 
+/**
+ * Say hello to the FocusGuard Helper on this computer.
+ *
+ * This is how the extension pairs itself: the Helper answers only this
+ * extension (it checks the chrome-extension:// origin, which a web page cannot
+ * fake) and hands back the token the agent expects. It is also how the portal
+ * knows the extension is installed and switched on. Nothing about your tabs is
+ * in this message.
+ */
+async function helloHelper() {
+  const { enabled } = await getSettings();
+  const browser = navigator.userAgent.includes("Edg/") ? "edge" : "chrome";
+  try {
+    const response = await fetch(`${HELPER_URL}/extension/hello`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        version: chrome.runtime.getManifest().version,
+        enabled,
+        browser,
+      }),
+    });
+    if (!response.ok) return;
+    const { token } = await response.json();
+    if (token) await chrome.storage.local.set({ token, paired: Date.now() });
+  } catch {
+    // FocusGuard is not installed or not running yet; try again next time.
+  }
+}
+
 /** Report the active tab of the focused window. */
 async function reportActiveTab() {
   const { token, enabled } = await getSettings();
@@ -108,15 +140,27 @@ async function reportActiveTab() {
   }
 }
 
+async function tick() {
+  await helloHelper();
+  await reportActiveTab();
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.alarms.create(POLL_ALARM, { periodInMinutes: POLL_MINUTES });
+  tick();
 });
 chrome.runtime.onStartup.addListener(() => {
   chrome.alarms.create(POLL_ALARM, { periodInMinutes: POLL_MINUTES });
+  tick();
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === POLL_ALARM) reportActiveTab();
+  if (alarm.name === POLL_ALARM) tick();
+});
+
+// The popup's "Pause" changes what the Helper should show the portal.
+chrome.storage.onChanged.addListener((changes) => {
+  if ("enabled" in changes) helloHelper();
 });
 
 // Report promptly on a switch as well as on the timer, so short visits are not

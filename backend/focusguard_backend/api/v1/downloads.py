@@ -55,6 +55,8 @@ _INSTALLER = Path(__file__).resolve().parents[2] / "installer"
 _TREES = ("shared/focusguard_shared", "desktop_agent/focusguard_agent")
 _FILES = ("requirements/base.txt", "requirements/agent.txt")
 _MODEL = "desktop_agent/models/yolov8n.onnx"
+#: The browser extension, unpacked: the person loads this folder in Chrome/Edge.
+_EXTENSION = "browser_extension/src"
 _SKIP_PARTS = {"__pycache__", ".pytest_cache"}
 _SKIP_SUFFIXES = {".pyc", ".pyo", ".db", ".db-wal", ".db-shm", ".log"}
 
@@ -81,7 +83,7 @@ def _included(path: Path) -> bool:
 
 @lru_cache(maxsize=4)
 def build_archive(server_url: str, root: Path) -> bytes:
-    missing = [p for p in (*_TREES, *_FILES, _MODEL) if not (root / p).exists()]
+    missing = [p for p in (*_TREES, *_FILES, _MODEL, _EXTENSION) if not (root / p).exists()]
     if missing:
         raise FileNotFoundError(", ".join(missing))
 
@@ -93,6 +95,9 @@ def build_archive(server_url: str, root: Path) -> bytes:
                     archive.write(path, f"{TOP}/{path.relative_to(root).as_posix()}")
         for name in _FILES:
             archive.write(root / name, f"{TOP}/{name}")
+        for path in sorted((root / _EXTENSION).iterdir()):
+            if path.is_file():
+                archive.write(path, f"{TOP}/extension/{path.name}")
         # Already compressed weights: storing them saves time and nothing else.
         archive.write(root / _MODEL, f"{TOP}/models/yolov8n.onnx",
                       compress_type=zipfile.ZIP_STORED)

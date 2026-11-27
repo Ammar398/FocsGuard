@@ -160,6 +160,8 @@ export interface Task {
   assignee_name: string | null
   deadline: string | null
   expected_minutes: number | null
+  /** Weekly auto-start on the assignee's computer, or null. */
+  schedule: TaskSchedule | null
   productive_rules: string[]
   neutral_rules: string[]
   distracting_rules: string[]
@@ -170,6 +172,14 @@ export interface Task {
   on_time: boolean | null
   created_at: string
   scores: TaskScores
+}
+
+export interface TaskSchedule {
+  /** 0 = Monday ... 6 = Sunday */
+  days: number[]
+  /** "HH:MM" on the employee's computer clock */
+  start: string
+  minutes: number
 }
 
 export interface TaskDetail extends Task {
@@ -272,6 +282,8 @@ export interface TaskInput {
   assignee_id?: number | null
   deadline?: string | null
   expected_minutes?: number | null
+  schedule?: TaskSchedule | null
+  clear_schedule?: boolean
   productive_rules?: string[]
   neutral_rules?: string[]
   distracting_rules?: string[]

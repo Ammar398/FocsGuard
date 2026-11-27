@@ -30,6 +30,7 @@ import {
   UsageList,
 } from '../../components/manager/ui'
 import { percent } from '../../components/manager/helpers'
+import { ScheduleCard } from '../../components/manager/ScheduleEditor'
 import { formatDate, formatDuration } from '../../lib/format'
 import { usePolling } from '../../lib/usePolling'
 
@@ -200,6 +201,16 @@ export function TaskDetailPage() {
             employee's task-category history.
           </p>
         </Card>
+        <div className="mt-6">
+          <Card title="Work time">
+            <ScheduleCard
+              schedule={data.schedule ?? null}
+              onSave={(value) =>
+                update(value ? { schedule: value } : { clear_schedule: true })
+              }
+            />
+          </Card>
+        </div>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">

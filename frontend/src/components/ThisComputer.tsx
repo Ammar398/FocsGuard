@@ -4,7 +4,9 @@
  *   1. Helper      the FocusGuard Helper answers on this computer
  *   2. Connect     this computer is linked to the signed-in account
  *   3. Camera      a camera preview that also personalises eye detection
- *   4. Start       name the session (students) or pick a task (employees)
+ *   4. Browser     the FocusGuard browser extension, so websites are counted
+ *                  (required for employees, recommended - and skippable - for students)
+ *   5. Start       name the session (students) or pick a task (employees)
  *
  * The portal never acts on the computer by itself. It asks the Helper, and the
  * Helper asks the person at the computer in a native Windows dialog, so every
@@ -27,10 +29,12 @@ import {
 import { useAuth } from '../auth/context'
 import { Aperture } from './Aperture'
 import { formatDate } from '../lib/format'
+import { endTime, formatSchedule } from '../lib/schedule'
 import {
   IconCamera,
   IconCheck,
   IconDownload,
+  IconGlobe,
   IconLink,
   IconPlay,
   IconShield,
@@ -39,8 +43,9 @@ import {
 
 const STUDY_CATEGORIES = ['STUDY', 'RESEARCH', 'DOCUMENTATION', 'BACKEND', 'FRONTEND', 'DESIGN', 'OTHER']
 const SKIP_CAMERA_KEY = 'focusguard.skipCameraCheck'
+const SKIP_EXTENSION_KEY = 'focusguard.skipExtension'
 
-type Busy = null | 'connecting' | 'camera' | 'starting' | 'stopping'
+type Busy = null | 'connecting' | 'camera' | 'extension' | 'starting' | 'stopping'
 type Run = (kind: Busy, action: () => Promise<string | null>) => Promise<void>
 
 export function ThisComputer({ onSessionChange }: { onSessionChange?: () => void }) {
@@ -52,6 +57,9 @@ export function ThisComputer({ onSessionChange }: { onSessionChange?: () => void
   const [download, setDownload] = useState<{ url: string; app: string } | null>(null)
   const [skippedCamera, setSkippedCamera] = useState(
     () => localStorage.getItem(SKIP_CAMERA_KEY) === '1',
+  )
+  const [skippedExtension, setSkippedExtension] = useState(
+    () => localStorage.getItem(SKIP_EXTENSION_KEY) === '1',
   )
 
   const refresh = useCallback(async () => {
@@ -110,12 +118,17 @@ export function ThisComputer({ onSessionChange }: { onSessionChange?: () => void
   const calibrated = Boolean(status?.camera?.calibrated)
   const cameraDone = calibrated || skippedCamera
   const running = Boolean(status?.session.running)
+  const employee = Boolean(status && status.organization_id !== null)
+  // Employees must add it; students may skip it (and add it later).
+  const extensionDone =
+    Boolean(status?.extension?.installed) || (!employee && skippedExtension)
 
   const steps: StepState[] = [
     status ? 'done' : 'current',
     !status ? 'todo' : connectedToMe ? 'done' : 'current',
     !connectedToMe ? 'todo' : cameraDone ? 'done' : 'current',
-    !connectedToMe || !cameraDone ? 'todo' : running ? 'done' : 'current',
+    !connectedToMe || !cameraDone ? 'todo' : extensionDone ? 'done' : 'current',
+    !connectedToMe || !cameraDone || !extensionDone ? 'todo' : running ? 'done' : 'current',
   ]
 
   return (
@@ -236,11 +249,34 @@ export function ThisComputer({ onSessionChange }: { onSessionChange?: () => void
           </StepPanel>
         )}
 
+        {status &&
+          connectedToMe &&
+          cameraDone &&
+          !extensionDone &&
+          !running &&
+          !status.camera.check_running && (
+            <ExtensionSetup
+              status={status}
+              employee={employee}
+              busy={busy}
+              run={run}
+              onSkip={() => {
+                localStorage.setItem(SKIP_EXTENSION_KEY, '1')
+                setSkippedExtension(true)
+              }}
+            />
+          )}
+
         {status && connectedToMe && running && (
           <LiveSession name={status.session.name} busy={busy} run={run} />
         )}
 
-        {status && connectedToMe && cameraDone && !running && !status.camera.check_running && (
+        {status &&
+          connectedToMe &&
+          cameraDone &&
+          extensionDone &&
+          !running &&
+          !status.camera.check_running && (
           <div className="space-y-4">
             <CameraLine
               status={status}
@@ -252,6 +288,15 @@ export function ThisComputer({ onSessionChange }: { onSessionChange?: () => void
               }
               disabled={busy !== null}
             />
+            <ExtensionLine
+              status={status}
+              employee={employee}
+              onAdd={() => {
+                localStorage.removeItem(SKIP_EXTENSION_KEY)
+                setSkippedExtension(false)
+              }}
+            />
+            {employee && <ScheduleLine status={status} />}
             {status.organization_id !== null ? (
               <AssignedTasks busy={busy} run={run} />
             ) : (
@@ -310,7 +355,7 @@ export function ThisComputer({ onSessionChange }: { onSessionChange?: () => void
 // --- steps ------------------------------------------------------------------
 
 type StepState = 'done' | 'current' | 'todo'
-const STEP_LABELS = ['Helper', 'Connect', 'Camera', 'Start']
+const STEP_LABELS = ['Helper', 'Connect', 'Camera', 'Browser', 'Start']
 
 function Stepper({ steps }: { steps: StepState[] }) {
   return (
@@ -393,6 +438,251 @@ function CameraLine({
         {status.camera.calibrated ? 'Re-run camera check' : 'Run camera check'}
       </button>
     </p>
+  )
+}
+
+// --- browser extension -------------------------------------------------------
+
+function currentBrowser(): 'chrome' | 'edge' {
+  return navigator.userAgent.includes('Edg/') ? 'edge' : 'chrome'
+}
+
+function ExtensionSetup({
+  status,
+  employee,
+  busy,
+  run,
+  onSkip,
+}: {
+  status: HelperStatus
+  employee: boolean
+  busy: Busy
+  run: Run
+  onSkip: () => void
+}) {
+  const browser = currentBrowser()
+  const browserName = browser === 'edge' ? 'Edge' : 'Chrome'
+  const page = browser === 'edge' ? 'edge://extensions' : 'chrome://extensions'
+  const [opened, setOpened] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const folder = status.extension?.folder ?? null
+  // A Helper installed before the extension existed does not report it.
+  const outdated = status.extension === undefined || folder === null
+
+  return (
+    <StepPanel
+      icon={<IconGlobe />}
+      title={
+        employee
+          ? 'Add the browser extension (required by your organisation)'
+          : 'Add the browser extension (recommended)'
+      }
+      body={
+        employee ? (
+          <>
+            Your organisation counts which websites your work happens on, so sessions on this
+            computer start only once the FocusGuard extension is added. Without it, FocusGuard
+            sees only that {browserName} is open, not whether it is your project tool or a
+            video site.
+          </>
+        ) : (
+          <>
+            Without it, FocusGuard sees only that {browserName} is open: a lecture,
+            documentation and social media all look the same, so browsing time cannot be
+            judged. With it, the sites you mark as distracting are really counted and your
+            report shows where your study time went. You can skip this and add it later.
+          </>
+        )
+      }
+    >
+      <div className="space-y-4 text-sm">
+        <ExtensionPrivacy />
+
+        {outdated ? (
+          <div className="space-y-2">
+            <p>
+              FocusGuard on this computer is older than the extension. Download it again and run
+              "Install FocusGuard" (your settings are kept), then come back here.
+            </p>
+            <a
+              href={INSTALLER_URL}
+              download
+              className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold whitespace-nowrap text-[var(--color-on-accent)] shadow-[var(--shadow-card)] transition hover:brightness-110"
+              style={{ background: 'var(--brand-gradient)' }}
+            >
+              <IconDownload size={18} />
+              Download FocusGuard again
+            </a>
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-2">
+              <PrimaryButton
+                icon={<IconGlobe size={18} />}
+                disabled={busy !== null}
+                onClick={() =>
+                  void run('extension', async () => {
+                    await localHelper.setupExtension(browser)
+                    setOpened(true)
+                    return null
+                  })
+                }
+              >
+                {busy === 'extension' ? 'Opening…' : `Add to ${browserName}`}
+              </PrimaryButton>
+              {!employee && <SecondaryButton onClick={onSkip}>Skip for now</SecondaryButton>}
+            </div>
+
+            <ol className="space-y-2">
+              {[
+                `The button opens ${browserName}'s extensions page and the extension's folder. (If the page does not open, type ${page} in the address bar.)`,
+                'Turn on Developer mode (top right of the extensions page).',
+                'Click Load unpacked. The folder path is already copied: paste it (Ctrl+V) into the folder box and click Select Folder.',
+                'Done. This page notices the extension by itself within 15 seconds.',
+              ].map((text, index) => (
+                <li key={text} className="flex gap-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-accent-soft)] text-xs font-semibold text-[var(--color-accent)]">
+                    {index + 1}
+                  </span>
+                  <span className="pt-0.5 leading-relaxed">{text}</span>
+                </li>
+              ))}
+            </ol>
+
+            <p className="flex flex-wrap items-center gap-2 text-xs text-[var(--color-muted)]">
+              Folder:
+              <code className="rounded bg-[var(--color-canvas)] px-1.5 py-0.5 break-all">
+                {folder}
+              </code>
+              <button
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(folder ?? '').then(() => setCopied(true))
+                }}
+                className="font-medium text-[var(--color-accent)] hover:underline"
+              >
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            </p>
+
+            {opened && (
+              <p className="flex items-center gap-2 rounded-xl bg-[var(--color-accent-soft)] px-3 py-2 text-xs">
+                <Pulse />
+                Waiting for the extension to check in…
+              </p>
+            )}
+          </>
+        )}
+      </div>
+    </StepPanel>
+  )
+}
+
+/** What the extension does and does not do, in plain words. */
+function ExtensionPrivacy() {
+  return (
+    <div className="grid gap-3 rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas)]/60 p-3.5 text-xs leading-relaxed sm:grid-cols-2">
+      <div>
+        <p className="font-semibold text-[var(--color-ink)]">What it does</p>
+        <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[var(--color-muted)]">
+          <li>
+            Tells FocusGuard <em>on this computer</em> the website of the tab you are looking at:
+            the domain and one path part, e.g. <code>youtube.com/watch</code>
+          </li>
+          <li>Only during a focus session; FocusGuard then counts it as work, neutral or distracting</li>
+          <li>A Pause button in the extension stops it at any time</li>
+        </ul>
+      </div>
+      <div>
+        <p className="font-semibold text-[var(--color-ink)]">What it never does</p>
+        <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[var(--color-muted)]">
+          <li>Send full addresses, searches or anything after a "?"</li>
+          <li>Read page content, passwords, forms or cookies</li>
+          <li>Look at background tabs or your history</li>
+          <li>Send anything to the internet itself</li>
+        </ul>
+      </div>
+    </div>
+  )
+}
+
+function ExtensionLine({
+  status,
+  employee,
+  onAdd,
+}: {
+  status: HelperStatus
+  employee: boolean
+  onAdd: () => void
+}) {
+  const extension = status.extension
+  const browserName = extension?.browser === 'edge' ? 'Edge' : 'Chrome'
+  let text: string
+  let warn = false
+  if (!extension?.installed) {
+    text = 'Browser extension not added: websites are not counted'
+  } else if (extension.enabled === false) {
+    text = `Browser extension paused in ${browserName}: websites are not counted`
+    warn = true
+  } else if (extension.connected) {
+    text = `Browser extension active in ${browserName}`
+  } else {
+    text = `Browser extension added (${browserName} is closed right now)`
+  }
+  return (
+    <p
+      className={`flex flex-wrap items-center gap-x-3 gap-y-1 text-xs ${
+        warn ? 'text-[var(--color-focus-low)]' : 'text-[var(--color-muted)]'
+      }`}
+    >
+      <span className="inline-flex items-center gap-1.5">
+        <IconGlobe size={14} />
+        {text}
+        {warn && employee ? ' - resume it from the FocusGuard button in the toolbar.' : ''}
+      </span>
+      {!extension?.installed && (
+        <button
+          type="button"
+          onClick={onAdd}
+          className="font-medium text-[var(--color-accent)] hover:underline"
+        >
+          Add it
+        </button>
+      )}
+    </p>
+  )
+}
+
+function formatLocal(value: string): string {
+  return new Date(value).toLocaleString(undefined, {
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+/** Employees: when the next scheduled session starts by itself. */
+function ScheduleLine({ status }: { status: HelperStatus }) {
+  const next = status.schedule?.next
+  const last = status.schedule?.last
+  if (!next && !(last && !last.ok)) return null
+  return (
+    <div className="space-y-1 text-xs text-[var(--color-muted)]">
+      {next && (
+        <p className="flex flex-wrap items-center gap-1.5">
+          <IconPlay size={14} />
+          {next.now ? 'Scheduled now' : 'Next scheduled'}: <strong>{next.title}</strong>,{' '}
+          {formatLocal(next.starts_at)} to {next.ends_at.slice(11, 16)}. It starts by itself on
+          this computer; close its window to stop early.
+        </p>
+      )}
+      {last && !last.ok && (
+        <p className="text-[var(--color-focus-low)]">
+          The scheduled start of "{last.title}" at {formatLocal(last.at)} did not happen:{' '}
+          {last.error}
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -526,6 +816,17 @@ function AssignedTasks({ busy, run }: { busy: Busy; run: Run }) {
                 {task.project_name ? `, ${task.project_name}` : ''}
                 {task.expected_minutes ? `, about ${task.expected_minutes} min` : ''}
               </p>
+              {task.schedule_time && task.schedule_days && task.schedule_minutes ? (
+                <p className="mt-1 text-xs text-[var(--color-accent)]">
+                  Starts by itself{' '}
+                  {formatSchedule({
+                    days: task.schedule_days,
+                    start: task.schedule_time,
+                    minutes: task.schedule_minutes,
+                  })}{' '}
+                  (until {endTime(task.schedule_time, task.schedule_minutes)})
+                </p>
+              ) : null}
               {(task.productive_rules.length > 0 || task.distracting_rules.length > 0) && (
                 <p className="mt-1 text-xs text-[var(--color-muted)]">
                   {task.productive_rules.length > 0 && (

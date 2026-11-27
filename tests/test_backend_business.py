@@ -592,3 +592,62 @@ def test_alpha_cannot_read_or_write_betas_records_by_id(two_companies):
     # And nothing changed on Beta's side.
     beta_task = client.get(f"/api/v1/manager/tasks/{w['task']}", headers=w["beta"]).json()
     assert beta_task["title"] == "Beta confidential task"
+
+
+# --- weekly work time ------------------------------------------------------------
+
+
+def test_a_task_work_time_is_saved_shown_and_sent_to_the_agent(client):
+    boss = _company(client, "Acme")
+    dev = _employee(client, boss, "dev@acme.example.com", "Dev One")
+    agent = _enrol(client, boss, dev)
+    schedule = {"days": [4, 0, 1, 1], "start": "09:00", "minutes": 240}
+
+    task = _task(client, boss, assignee_id=dev, schedule=schedule)
+    assert task["schedule"] == {"days": [0, 1, 4], "start": "09:00", "minutes": 240}
+
+    tasks = client.get(
+        "/api/v1/agent/tasks", headers={"X-Device-Secret": agent["X-Device-Secret"]}
+    ).json()
+    assert tasks[0]["schedule_days"] == [0, 1, 4]
+    assert tasks[0]["schedule_time"] == "09:00" and tasks[0]["schedule_minutes"] == 240
+
+    changed = client.patch(f"/api/v1/manager/tasks/{task['id']}", headers=boss,
+                           json={"schedule": {"days": [2], "start": "14:30", "minutes": 60}})
+    assert changed.json()["schedule"]["start"] == "14:30"
+    cleared = client.patch(f"/api/v1/manager/tasks/{task['id']}", headers=boss,
+                           json={"clear_schedule": True})
+    assert cleared.json()["schedule"] is None
+
+
+@pytest.mark.parametrize("schedule", [
+    {"days": [], "start": "09:00", "minutes": 60},
+    {"days": [7], "start": "09:00", "minutes": 60},
+    {"days": [0], "start": "9am", "minutes": 60},
+    {"days": [0], "start": "23:00", "minutes": 120},  # past midnight
+    {"days": [0], "start": "09:00", "minutes": 1},
+])
+def test_an_impossible_work_time_is_refused(client, schedule):
+    boss = _company(client, "Acme")
+    response = client.post("/api/v1/manager/tasks", headers=boss, json={
+        "title": "x", "category": "BACKEND", "schedule": schedule,
+    })
+    assert response.status_code == 422
+
+
+def test_new_columns_are_added_to_an_existing_database(tmp_path):
+    from sqlalchemy import create_engine, inspect, text
+
+    from focusguard_backend.database.session import add_missing_columns
+    from focusguard_backend.models.base import Base
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    Base.metadata.create_all(engine)
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE tasks DROP COLUMN schedule_minutes"))
+        connection.execute(text("ALTER TABLE tasks DROP COLUMN schedule_days"))
+
+    assert sorted(add_missing_columns(engine)) == ["tasks.schedule_days", "tasks.schedule_minutes"]
+    assert "schedule_minutes" in {c["name"] for c in inspect(engine).get_columns("tasks")}
+    assert add_missing_columns(engine) == []
+    engine.dispose()

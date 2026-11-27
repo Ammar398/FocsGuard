@@ -62,10 +62,12 @@ from focusguard_backend.api.v1.business_schemas import (
     TaskCreate,
     TaskDetail,
     TaskOut,
+    TaskSchedule,
     TaskScoresOut,
     TaskUpdate,
     UsageRow,
     WindowStats,
+    schedule_of,
 )
 from focusguard_backend.api.v1.schemas import MessageResponse
 from focusguard_backend.auth.dependencies import require_role
@@ -253,6 +255,12 @@ def scores_out(scores: TaskScores) -> TaskScoresOut:
     )
 
 
+def _apply_schedule(task: Task, schedule: TaskSchedule | None) -> None:
+    task.schedule_days = list(schedule.days) if schedule else None
+    task.schedule_time = schedule.start if schedule else None
+    task.schedule_minutes = schedule.minutes if schedule else None
+
+
 def task_out(
     task: Task, scores: TaskScores, people: dict[int, str], projects: dict[int, str]
 ) -> TaskOut:
@@ -269,6 +277,7 @@ def task_out(
         assignee_name=people.get(task.assignee_id) if task.assignee_id else None,
         deadline=as_utc(task.deadline),
         expected_minutes=task.expected_minutes,
+        schedule=schedule_of(task),
         productive_rules=list(task.productive_rules or []),
         neutral_rules=list(task.neutral_rules or []),
         distracting_rules=list(task.distracting_rules or []),
@@ -881,6 +890,7 @@ def create_task(
         distracting_rules=payload.distracting_rules,
         rework_count=0,
     )
+    _apply_schedule(task, payload.schedule)
     db.add(task)
     db.commit()
     db.refresh(task)
@@ -996,6 +1006,10 @@ def update_task(
         task.deadline = payload.deadline
     if payload.expected_minutes is not None:
         task.expected_minutes = payload.expected_minutes
+    if payload.clear_schedule:
+        _apply_schedule(task, None)
+    elif payload.schedule is not None:
+        _apply_schedule(task, payload.schedule)
     if payload.rework_count is not None:
         task.rework_count = payload.rework_count
     for field_name in ("productive_rules", "neutral_rules", "distracting_rules"):

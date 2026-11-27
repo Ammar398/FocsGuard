@@ -96,6 +96,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     helper.tidy_local_store()
+    helper.start_scheduler()
     print(f"FocusGuard Helper ready on http://127.0.0.1:{server.port}")
     print("Open the FocusGuard portal and click 'Connect this computer'.")
     print("Anything that connects this computer or turns the webcam on asks you first.")
@@ -104,6 +105,7 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         pass
     finally:
+        helper.stop_scheduler()
         server.stop()
     return 0
 

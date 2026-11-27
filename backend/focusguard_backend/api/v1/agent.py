@@ -264,6 +264,9 @@ def assigned_tasks(
             productive_rules=list(task.productive_rules or []),
             neutral_rules=list(task.neutral_rules or []),
             distracting_rules=list(task.distracting_rules or []),
+            schedule_days=list(task.schedule_days) if task.schedule_days else None,
+            schedule_time=task.schedule_time,
+            schedule_minutes=task.schedule_minutes,
         )
         for task in tasks
     ]

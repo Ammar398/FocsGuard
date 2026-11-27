@@ -121,6 +121,41 @@ def create_all(engine: Engine | None = None) -> None:
 
     target = engine or get_engine()
     Base.metadata.create_all(target)
+    add_missing_columns(target)
+
+
+def add_missing_columns(engine: Engine) -> list[str]:
+    """Add new *nullable* columns to tables that already exist.
+
+    `create_all` creates missing tables but never changes an existing one, so a
+    server that keeps its database between deploys (the hosted one) would
+    otherwise lack every column added since it was first created. Only nullable
+    columns are added: they need no value for the rows already there. Anything
+    more involved belongs in an Alembic migration.
+    """
+    from sqlalchemy import inspect, text
+
+    from focusguard_backend.models.base import Base
+
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    added: list[str] = []
+    with engine.begin() as connection:
+        for table in Base.metadata.sorted_tables:
+            if table.name not in existing_tables:
+                continue
+            present = {column["name"] for column in inspector.get_columns(table.name)}
+            for column in table.columns:
+                if column.name in present or not column.nullable:
+                    continue
+                kind = column.type.compile(dialect=engine.dialect)
+                connection.execute(
+                    text(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {kind}')
+                )
+                added.append(f"{table.name}.{column.name}")
+    if added:
+        logger.info("Added columns to the existing database: %s", ", ".join(added))
+    return added
 
 
 def reset_engine() -> None:

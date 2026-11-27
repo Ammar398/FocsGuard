@@ -69,7 +69,7 @@ Write-Host "Using $python"
 # --- 2. files ----------------------------------------------------------------------
 Say 'Copying FocusGuard'
 New-Item -ItemType Directory -Force -Path $app | Out-Null
-foreach ($folder in @('shared', 'desktop_agent', 'requirements')) {
+foreach ($folder in @('shared', 'desktop_agent', 'requirements', 'extension')) {
     $target = Join-Path $app $folder
     if (Test-Path $target) { Remove-Item -Recurse -Force $target }
     Copy-Item -Recurse -Force (Join-Path $source $folder) $target

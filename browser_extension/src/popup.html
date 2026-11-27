@@ -46,7 +46,8 @@
   <h1><span id="dot" class="dot off"></span><span id="heading">FocusGuard</span></h1>
 
   <div class="panel">
-    <div class="row"><span>Agent</span><span id="agent">checking…</span></div>
+    <div class="row"><span>FocusGuard</span><span id="agent">checking…</span></div>
+    <div class="row"><span>Focus session</span><span id="session">—</span></div>
     <div class="row"><span>Monitoring</span><span id="state">—</span></div>
     <div class="row"><span>Last report</span><span id="last">never</span></div>
   </div>
@@ -71,13 +72,15 @@
 
   <button id="toggle" class="secondary">Pause monitoring</button>
 
-  <label for="token">Pairing token</label>
-  <input id="token" type="password" placeholder="paste from FocusGuard" autocomplete="off" />
-  <button id="save">Save token</button>
-  <p class="note" id="tokenHint">
-    Find it by running <code>focusguard-token</code>, or open
-    <code>%LOCALAPPDATA%\FocusGuard\ipc_token.txt</code>.
-  </p>
+  <details style="margin-top:10px">
+    <summary class="note" style="cursor:pointer">Pairing (automatic)</summary>
+    <p class="note" id="tokenHint">
+      Paired automatically with FocusGuard on this computer. Only if that fails,
+      paste the token from <code>%LOCALAPPDATA%\FocusGuard\ipc_token.txt</code>.
+    </p>
+    <input id="token" type="password" placeholder="paste from FocusGuard" autocomplete="off" />
+    <button id="save">Save token</button>
+  </details>
 
   <script src="popup.js"></script>
 </body>

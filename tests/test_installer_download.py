@@ -91,3 +91,20 @@ def test_a_server_without_the_agent_files_says_so(client, monkeypatch, tmp_path)
     response = client.get(URL)
     assert response.status_code == 503
     assert "not available" in response.json()["detail"]
+
+
+def test_it_carries_the_browser_extension_with_the_id_the_helper_trusts(client):
+    import base64
+    import hashlib
+    import json
+
+    from focusguard_agent.helper.server import EXTENSION_ID
+
+    archive = _open(client.get(URL))
+    names = set(archive.namelist())
+    for name in ("manifest.json", "background.js", "popup.html", "popup.js", "icon128.png"):
+        assert f"FocusGuard/extension/{name}" in names
+
+    manifest = json.loads(archive.read("FocusGuard/extension/manifest.json"))
+    digest = hashlib.sha256(base64.b64decode(manifest["key"])).hexdigest()[:32]
+    assert "".join(chr(ord("a") + int(c, 16)) for c in digest) == EXTENSION_ID

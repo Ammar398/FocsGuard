@@ -8,10 +8,12 @@
  */
 
 const AGENT_URL = "http://127.0.0.1:48213";
+const HELPER_URL = "http://127.0.0.1:48214";
 
 const dot = document.getElementById("dot");
 const heading = document.getElementById("heading");
 const agentEl = document.getElementById("agent");
+const sessionEl = document.getElementById("session");
 const stateEl = document.getElementById("state");
 const lastEl = document.getElementById("last");
 const toggleBtn = document.getElementById("toggle");
@@ -45,15 +47,20 @@ async function refresh() {
       "A pairing token is required before anything is sent. Run focusguard-token.";
   }
 
-  let reachable = false;
-  try {
-    const response = await fetch(`${AGENT_URL}/status`, { cache: "no-store" });
-    reachable = response.ok;
-  } catch {
-    reachable = false;
-  }
+  const ok = async (url) => {
+    try {
+      return (await fetch(url, { cache: "no-store" })).ok;
+    } catch {
+      return false;
+    }
+  };
+  // The Helper is always running once FocusGuard is installed; the agent only
+  // while a focus session is on.
+  const reachable = await ok(`${HELPER_URL}/status`);
+  const inSession = await ok(`${AGENT_URL}/status`);
 
-  agentEl.textContent = reachable ? "connected" : "not running";
+  agentEl.textContent = reachable ? "running" : "not running";
+  sessionEl.textContent = inSession ? "on - sites are counted" : "none right now";
 
   // The indicator is green ONLY when data is genuinely flowing. Anything else -
   // paused, no token, agent down - must not look like normal operation.
@@ -65,7 +72,7 @@ async function refresh() {
     heading.textContent = token ? "FocusGuard - paused" : "FocusGuard - setup needed";
   } else {
     dot.className = "dot off";
-    heading.textContent = "FocusGuard - agent offline";
+    heading.textContent = "FocusGuard - not running on this computer";
   }
 }
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from focusguard_shared.constants import TaskCategory, TaskPriority, TaskStatus
 
@@ -229,6 +229,39 @@ def _clean_rules(values: list[str]) -> list[str]:
     return seen
 
 
+class TaskSchedule(BaseModel):
+    """When the employee's computer starts this task by itself, every week."""
+
+    #: Weekdays, 0 = Monday ... 6 = Sunday.
+    days: list[int] = Field(min_length=1, max_length=7)
+    #: "HH:MM", 24-hour, on the employee's own clock.
+    start: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    minutes: int = Field(ge=5, le=12 * 60)
+
+    @field_validator("days")
+    @classmethod
+    def _days(cls, value: list[int]) -> list[int]:
+        if any(day < 0 or day > 6 for day in value):
+            raise ValueError("days are 0 (Monday) to 6 (Sunday)")
+        return sorted(set(value))
+
+    @model_validator(mode="after")
+    def _same_day(self) -> TaskSchedule:
+        hour, minute = (int(part) for part in self.start.split(":"))
+        if hour * 60 + minute + self.minutes > 24 * 60:
+            raise ValueError("a scheduled session must end by midnight")
+        return self
+
+
+def schedule_of(task: object) -> TaskSchedule | None:
+    days = getattr(task, "schedule_days", None)
+    start = getattr(task, "schedule_time", None)
+    minutes = getattr(task, "schedule_minutes", None)
+    if not days or not start or not minutes:
+        return None
+    return TaskSchedule(days=list(days), start=start, minutes=minutes)
+
+
 class TaskCreate(_Request):
     title: str = Field(min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=4000)
@@ -238,6 +271,7 @@ class TaskCreate(_Request):
     assignee_id: int | None = None
     deadline: datetime | None = None
     expected_minutes: int | None = Field(default=None, ge=1, le=60 * 24 * 30)
+    schedule: TaskSchedule | None = None
     productive_rules: list[str] = _RULE
     neutral_rules: list[str] = _RULE
     distracting_rules: list[str] = _RULE
@@ -262,6 +296,8 @@ class TaskUpdate(_Request):
     deadline: datetime | None = None
     expected_minutes: int | None = Field(default=None, ge=1, le=60 * 24 * 30)
     status: TaskStatus | None = None
+    schedule: TaskSchedule | None = None
+    clear_schedule: bool = False
     quality_rating: float | None = Field(default=None, ge=1, le=5)
     rework_count: int | None = Field(default=None, ge=0, le=100)
     productive_rules: list[str] | None = Field(default=None, max_length=100)
@@ -300,6 +336,7 @@ class TaskOut(BaseModel):
     assignee_name: str | None
     deadline: datetime | None
     expected_minutes: int | None
+    schedule: TaskSchedule | None = None
     productive_rules: list[str]
     neutral_rules: list[str]
     distracting_rules: list[str]
@@ -396,6 +433,10 @@ class AgentTaskOut(BaseModel):
     productive_rules: list[str]
     neutral_rules: list[str]
     distracting_rules: list[str]
+    #: Weekly auto-start: weekdays (0 = Monday), "HH:MM" and minutes, or None.
+    schedule_days: list[int] | None = None
+    schedule_time: str | None = None
+    schedule_minutes: int | None = None
 
 
 EmployeeDetail.model_rebuild()

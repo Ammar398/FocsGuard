@@ -20,6 +20,17 @@ The helper never opens the camera and never monitors anything. It only:
     POST /sessions/stop   ask the running agent to stop cleanly
     POST /camera/check    open the camera preview + personal calibration     -> asks first
     POST /prefs           turn "always allow" off again (never on - only the dialog can)
+    POST /extension/setup open the extension folder and the browser's extensions page
+    POST /extension/hello (the FocusGuard browser extension only) pair it: hand it
+                          the agent's token, and note that it is installed and on
+
+SCHEDULED WORK TIME
+-------------------
+A manager can give a task a weekly time ("Mon-Fri 09:00 for 4 hours"). The
+Helper checks every 30 seconds and, inside that window, starts the task's
+session by itself - with the same camera question as a manual start, unless
+this computer said "Always allow". The session window is visible, and closing
+it ends the session; it is not started again in the same window.
 
 Turning the camera on (a session or the camera check) asks with three choices:
 Start once, Always allow on this computer, or Cancel. "Always allow" is stored
@@ -54,8 +65,11 @@ import platform
 import subprocess
 import sys
 import threading
+import time
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 
 from focusguard_agent.calibration.ear_calibration import load_profile
@@ -95,6 +109,115 @@ CameraDialog = Callable[[str, str], str]
 CameraProbe = Callable[[], CameraReadiness]
 
 _PREFS_FILE = "helper_prefs.json"
+
+#: The FocusGuard browser extension. Its manifest carries a fixed public key, so
+#: this ID is the same on every computer, in Chrome and in Edge - and a web page
+#: can never send this Origin.
+EXTENSION_ID = "fjlahpiccoolnocmkackboinmkolhhpi"
+EXTENSION_ORIGIN = f"chrome-extension://{EXTENSION_ID}"
+_EXTENSION_FILE = "extension.json"
+#: The extension says hello every ~15 seconds while the browser is open.
+_EXTENSION_FRESH_SECONDS = 90
+
+_SCHEDULE_FILE = "schedule_state.json"
+_SCHEDULE_TASKS_SECONDS = 120
+
+#: (folder, "chrome" | "edge") -> opens the folder and the extensions page.
+ExtensionOpener = Callable[[Path, str], Any]
+
+
+def extension_folder() -> Path | None:
+    """Where the unpacked extension is on this computer, if it is."""
+    base = Path(__file__).resolve().parents[3]
+    # Installed: <app>/extension. A developer checkout: browser_extension/src.
+    for candidate in (base / "extension", base / "browser_extension" / "src"):
+        if (candidate / "manifest.json").is_file():
+            return candidate
+    return None
+
+
+def _browser_exe(browser: str) -> str | None:
+    name = {
+        "chrome": r"Google\Chrome\Application\chrome.exe",
+        "edge": r"Microsoft\Edge\Application\msedge.exe",
+    }[browser]
+    for base in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"):
+        folder = os.environ.get(base)
+        if folder and (Path(folder) / name).is_file():
+            return str(Path(folder) / name)
+    return None
+
+
+def open_extension_setup(folder: Path, browser: str) -> None:
+    """Open the extension folder, copy its path, and open the extensions page.
+
+    A web page may not open chrome://extensions, and Chrome only installs an
+    extension from outside its store when the person loads it themselves - so
+    this is as far as it can be automated: everything ready, two clicks left.
+    """
+    if sys.platform != "win32":
+        return
+    try:  # the path on the clipboard, ready for the "Load unpacked" folder box
+        subprocess.run(  # noqa: S603
+            ["clip.exe"], input=("\ufeff" + str(folder)).encode("utf-16-le"),
+            check=False, timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        pass
+    os.startfile(str(folder))  # noqa: S606 - Explorer, on a path we chose
+    exe = _browser_exe(browser)
+    if exe:
+        page = "edge://extensions/" if browser == "edge" else "chrome://extensions/"
+        subprocess.Popen([exe, page])  # noqa: S603
+
+
+def _schedule_window(task: dict[str, Any], now: datetime) -> tuple[datetime, datetime] | None:
+    """The start and end of this task's scheduled time on `now`'s day, if any."""
+    days = task.get("schedule_days") or []
+    at = task.get("schedule_time") or ""
+    try:
+        hour, minute = (int(part) for part in str(at).split(":"))
+        minutes = int(task.get("schedule_minutes") or 0)
+    except (TypeError, ValueError):
+        return None
+    if minutes <= 0 or now.weekday() not in days:
+        return None
+    start = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    return start, start + timedelta(minutes=minutes)
+
+
+def due_now(task: dict[str, Any], now: datetime) -> tuple[datetime, datetime] | None:
+    """The window if `now` is inside it, with at least a minute of it left."""
+    window = _schedule_window(task, now)
+    if window is None:
+        return None
+    start, end = window
+    return window if start <= now < end - timedelta(minutes=1) else None
+
+
+def next_scheduled(tasks: list[dict[str, Any]], now: datetime) -> dict[str, Any] | None:
+    """The next (or current) scheduled session over the coming week."""
+    best: tuple[datetime, dict[str, Any], datetime] | None = None
+    for offset in range(8):
+        day = now + timedelta(days=offset)
+        for task in tasks:
+            window = _schedule_window(task, day)
+            if window is None or window[1] <= now:
+                continue
+            if best is None or window[0] < best[0]:
+                best = (window[0], task, window[1])
+        if best is not None:
+            break
+    if best is None:
+        return None
+    start, task, end = best
+    return {
+        "task_id": task.get("id"),
+        "title": task.get("title"),
+        "starts_at": start.isoformat(timespec="minutes"),
+        "ends_at": end.isoformat(timespec="minutes"),
+        "now": start <= now,
+    }
 
 
 def native_confirm(title: str, message: str) -> bool:
@@ -246,8 +369,17 @@ class FocusGuardHelper:
         camera_launcher: Launcher = launch_camera_check,
         camera_dialog: CameraDialog = native_camera_dialog,
         camera_probe: CameraProbe | None = None,
+        extension_opener: ExtensionOpener = open_extension_setup,
     ) -> None:
         self.settings = settings or get_settings()
+        self._extension_opener = extension_opener
+        #: (monotonic time, switched on?) of the extension's last hello.
+        self._extension_seen: tuple[float, bool] | None = None
+        #: (monotonic time, tasks) for the scheduler, so it asks the server rarely.
+        self._schedule_cache: tuple[float, list[dict[str, Any]]] | None = None
+        #: What the scheduler last did, for the portal.
+        self._schedule_note: dict[str, Any] | None = None
+        self._scheduler_stop = threading.Event()
         self._confirm = confirm
         self._launcher = launcher
         self._camera_launcher = camera_launcher
@@ -373,7 +505,172 @@ class FocusGuardHelper:
                 "calibrated": profile is not None,
                 "calibrated_at": profile.created_at if profile else None,
             },
+            "extension": self.extension_status(),
+            "schedule": {
+                "next": next_scheduled(
+                    self._schedule_cache[1] if self._schedule_cache else [], datetime.now()
+                ),
+                "last": self._schedule_note,
+            },
         }
+
+    # -- the browser extension ---------------------------------------------
+
+    @staticmethod
+    def _extension_record() -> dict[str, Any]:
+        try:
+            data = json.loads((app_data_dir() / _EXTENSION_FILE).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def extension_status(self) -> dict[str, Any]:
+        record = self._extension_record()
+        seen = self._extension_seen
+        folder = extension_folder()
+        return {
+            # Paired once on this computer (kept across restarts).
+            "installed": bool(record.get("paired_at")),
+            # Said hello in the last minute and a half: the browser is open.
+            "connected": seen is not None
+            and time.monotonic() - seen[0] < _EXTENSION_FRESH_SECONDS,
+            "enabled": seen[1] if seen is not None else None,
+            "browser": record.get("browser"),
+            "version": record.get("version"),
+            "paired_at": record.get("paired_at"),
+            "folder": str(folder) if folder else None,
+        }
+
+    def extension_hello(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """The extension checking in. Returns the token the agent expects."""
+        from focusguard_agent.ipc.server import load_or_create_token
+
+        browser = "edge" if payload.get("browser") == "edge" else "chrome"
+        version = _clean_text(payload.get("version"), 20)
+        self._extension_seen = (time.monotonic(), payload.get("enabled") is not False)
+        record = self._extension_record()
+        if (not record.get("paired_at") or record.get("browser") != browser
+                or record.get("version") != version):
+            record.update(browser=browser, version=version)
+            record.setdefault("paired_at", datetime.now(UTC).isoformat(timespec="seconds"))
+            path = app_data_dir() / _EXTENSION_FILE
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(record), encoding="utf-8")
+            logger.info("Browser extension paired (%s %s)", browser, version)
+        return {"ok": True, "token": load_or_create_token()}
+
+    def extension_setup(self, payload: dict[str, Any]) -> dict[str, Any]:
+        folder = extension_folder()
+        if folder is None:
+            raise HelperError(
+                404, "The extension files are not on this computer. Download FocusGuard "
+                "from the portal and run the installer again."
+            )
+        browser = "edge" if payload.get("browser") == "edge" else "chrome"
+        self._extension_opener(folder, browser)
+        return {"ok": True, "folder": str(folder), "browser": browser}
+
+    def _require_extension(self) -> None:
+        """Employees: an organisation's sessions need the browser extension."""
+        try:
+            credential = load_credential()
+        except NotEnrolled:
+            return
+        if credential.organization_id is None:
+            return  # a student: the extension is recommended, not required
+        if not self._extension_record().get("paired_at"):
+            raise HelperError(
+                412,
+                "Your organisation requires the FocusGuard browser extension, so that work "
+                "websites are counted. Add it under This computer -> Browser extension in "
+                "the portal, then start again.",
+                {"extension_required": True},
+            )
+
+    # -- scheduled work time -------------------------------------------------
+
+    def _scheduled_tasks(self) -> list[dict[str, Any]]:
+        cached = self._schedule_cache
+        if cached is not None and time.monotonic() - cached[0] < _SCHEDULE_TASKS_SECONDS:
+            return cached[1]
+        try:
+            tasks = [task for task in self.tasks() if task.get("schedule_time")]
+        except HelperError:
+            return cached[1] if cached else []
+        self._schedule_cache = (time.monotonic(), tasks)
+        return tasks
+
+    @staticmethod
+    def _handled(today: str) -> set[str]:
+        try:
+            data = json.loads((app_data_dir() / _SCHEDULE_FILE).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return set()
+        return set(data.get("handled", [])) if data.get("day") == today else set()
+
+    @staticmethod
+    def _save_handled(today: str, handled: set[str]) -> None:
+        path = app_data_dir() / _SCHEDULE_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"day": today, "handled": sorted(handled)}), encoding="utf-8")
+
+    def scheduled_tick(self, now: datetime | None = None) -> dict[str, Any] | None:
+        """Start a scheduled task session if one is due. Returns what happened."""
+        now = now or datetime.now()
+        try:
+            credential = load_credential()
+        except NotEnrolled:
+            return None
+        if credential.organization_id is None:
+            return None
+
+        today = now.date().isoformat()
+        handled = self._handled(today)
+        for task in self._scheduled_tasks():
+            window = due_now(task, now)
+            if window is None:
+                continue
+            key = f"{task['id']}@{window[0].isoformat(timespec='minutes')}"
+            if key in handled:
+                continue
+            # Marked before trying: a declined question, or a window the person
+            # closed, must not come back every 30 seconds.
+            handled.add(key)
+            self._save_handled(today, handled)
+            title = _clean_text(task.get("title"), 200) or "Scheduled task"
+            note: dict[str, Any] = {
+                "task_id": task["id"], "title": title,
+                "at": now.isoformat(timespec="minutes"),
+            }
+            if self._running_session() is not None:
+                note.update(ok=False, error="A session was already running.")
+            else:
+                seconds = int((window[1] - now).total_seconds())
+                try:
+                    self.start_session({"assigned_task_id": task["id"]}, scheduled_seconds=seconds)
+                    note.update(ok=True, minutes=round(seconds / 60))
+                except HelperError as error:
+                    note.update(ok=False, error=error.message)
+            self._schedule_note = note
+            logger.info("Scheduled session %r: %s", title,
+                        "started" if note.get("ok") else note.get("error"))
+            return note
+        return None
+
+    def start_scheduler(self, interval: float = 30.0) -> threading.Thread:
+        def loop() -> None:
+            while not self._scheduler_stop.wait(interval):
+                try:
+                    self.scheduled_tick()
+                except Exception:  # noqa: BLE001 - the Helper must keep running
+                    logger.exception("Scheduled start check failed")
+
+        thread = threading.Thread(target=loop, name="focusguard-schedule", daemon=True)
+        thread.start()
+        return thread
+
+    def stop_scheduler(self) -> None:
+        self._scheduler_stop.set()
 
     def _ask(self, title: str, message: str) -> bool:
         if not self._asking.acquire(blocking=False):
@@ -486,7 +783,9 @@ class FocusGuardHelper:
         logger.info("Camera check opened from the portal")
         return {"ok": True, "camera": readiness.as_dict()}
 
-    def start_session(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def start_session(
+        self, payload: dict[str, Any], scheduled_seconds: int | None = None
+    ) -> dict[str, Any]:
         running = self._running_session()
         if running is not None:
             raise HelperError(409, f"A session is already running: {running!r}.")
@@ -522,15 +821,27 @@ class FocusGuardHelper:
                     if items:
                         arguments += [f"--{flag}", *items]
 
+        self._require_extension()
         readiness = self._ready_camera()
-        self._approve_camera(
-            "FocusGuard - start monitoring?",
-            f'Start the focus session "{name}"?\n\n'
-            "Your webcam will be analysed on this computer, and the application\n"
-            "and website domain you are using will be recorded, until you stop it.\n\n"
-            "No video, screenshots or typing are ever recorded or uploaded.\n"
-            "A FocusGuard window stays open for as long as monitoring runs.",
-        )
+        if scheduled_seconds is not None:
+            minutes = max(1, round(scheduled_seconds / 60))
+            question = (
+                f'Your scheduled work time for "{name}" starts now.\n\n'
+                f"Start the session for the next {minutes} minutes? Your webcam will be\n"
+                "analysed on this computer, and the application and website domain you\n"
+                "use will be recorded. Close the FocusGuard window to stop at any time.\n\n"
+                "No video, screenshots or typing are ever recorded or uploaded."
+            )
+            arguments += ["--seconds", str(scheduled_seconds)]
+        else:
+            question = (
+                f'Start the focus session "{name}"?\n\n'
+                "Your webcam will be analysed on this computer, and the application\n"
+                "and website domain you are using will be recorded, until you stop it.\n\n"
+                "No video, screenshots or typing are ever recorded or uploaded.\n"
+                "A FocusGuard window stays open for as long as monitoring runs."
+            )
+        self._approve_camera("FocusGuard - start monitoring?", question)
 
         # --preview: a live analysis window that stays up for the whole
         # session; closing it is how the person ends the session.
@@ -567,6 +878,7 @@ def portal_origins(settings: AgentSettings) -> set[str]:
 
 def make_handler(helper: FocusGuardHelper, port: int) -> type[BaseHTTPRequestHandler]:
     allowed_origins = portal_origins(helper.settings)
+    extension_origins = {EXTENSION_ORIGIN}
     allowed_hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
 
     class Handler(BaseHTTPRequestHandler):
@@ -581,14 +893,14 @@ def make_handler(helper: FocusGuardHelper, port: int) -> type[BaseHTTPRequestHan
             origin = self.headers.get("Origin")
             return origin.rstrip("/") if origin else None
 
-        def _guard(self, require_origin: bool) -> bool:
+        def _guard(self, require_origin: bool, origins: set[str] = allowed_origins) -> bool:
             if self.headers.get("Host", "") not in allowed_hosts:
                 self._send(421, {"error": "This helper only answers on 127.0.0.1."})
                 return False
             origin = self._origin()
             if origin is None and not require_origin:
                 return True
-            if origin not in allowed_origins:
+            if origin not in origins:
                 self._send(403, {"error": "This page is not allowed to control FocusGuard."})
                 return False
             return True
@@ -597,7 +909,7 @@ def make_handler(helper: FocusGuardHelper, port: int) -> type[BaseHTTPRequestHan
             body = json.dumps(payload).encode("utf-8")
             self.send_response(status)
             origin = self._origin()
-            if origin in allowed_origins:
+            if origin in allowed_origins or origin in extension_origins:
                 self.send_header("Access-Control-Allow-Origin", origin)
                 self.send_header("Vary", "Origin")
             self.send_header("Content-Type", "application/json")
@@ -649,7 +961,11 @@ def make_handler(helper: FocusGuardHelper, port: int) -> type[BaseHTTPRequestHan
             self.end_headers()
 
         def do_GET(self) -> None:  # noqa: N802
-            if not self._guard(require_origin=False):
+            # The extension's popup may read /status too ("is FocusGuard running?").
+            origins = allowed_origins | extension_origins if self.path == "/status" else (
+                allowed_origins
+            )
+            if not self._guard(require_origin=False, origins=origins):
                 return
             try:
                 if self.path == "/status":
@@ -668,6 +984,15 @@ def make_handler(helper: FocusGuardHelper, port: int) -> type[BaseHTTPRequestHan
                 self.close_connection = True
                 self._send(error.status, {"error": error.message, **error.extra})
                 return
+            if self.path == "/extension/hello":
+                # Only the extension itself; no web page, not even the portal.
+                if not self._guard(require_origin=True, origins=extension_origins):
+                    return
+                try:
+                    self._send(200, helper.extension_hello(self._body(raw)))
+                except HelperError as error:
+                    self._send(error.status, {"error": error.message, **error.extra})
+                return
             if not self._guard(require_origin=True):
                 return
             routes = {
@@ -676,6 +1001,7 @@ def make_handler(helper: FocusGuardHelper, port: int) -> type[BaseHTTPRequestHan
                 "/sessions/stop": lambda body: helper.stop_session(),
                 "/camera/check": lambda body: helper.camera_check(),
                 "/prefs": lambda body: helper.set_prefs(body),
+                "/extension/setup": lambda body: helper.extension_setup(body),
             }
             route = routes.get(self.path)
             if route is None:

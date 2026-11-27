@@ -26,6 +26,52 @@ export interface HelperStatus {
     calibrated: boolean
     calibrated_at: string | null
   }
+  /** Missing from Helpers installed before the extension existed. */
+  extension?: ExtensionStatus
+  /** Employees: the manager's weekly work times for their tasks. */
+  schedule?: {
+    next: ScheduledSession | null
+    last: {
+      task_id: number
+      title: string
+      at: string
+      ok: boolean
+      error?: string
+      minutes?: number
+    } | null
+  }
+}
+
+export interface ExtensionStatus {
+  /** Paired with this computer at least once. */
+  installed: boolean
+  /** Checked in during the last 90 seconds: the browser is open. */
+  connected: boolean
+  /** False when paused from the extension's own button. */
+  enabled: boolean | null
+  browser: 'chrome' | 'edge' | null
+  version: string | null
+  paired_at: string | null
+  /** The unpacked extension's folder on this computer. */
+  folder: string | null
+}
+
+export interface ScheduledSession {
+  task_id: number
+  title: string
+  /** Local time on this computer, "YYYY-MM-DDTHH:MM". */
+  starts_at: string
+  ends_at: string
+  /** True while inside the window. */
+  now: boolean
+}
+
+export interface TaskScheduleValue {
+  /** 0 = Monday ... 6 = Sunday */
+  days: number[]
+  /** "HH:MM" */
+  start: string
+  minutes: number
 }
 
 export interface AssignedTask {
@@ -39,6 +85,9 @@ export interface AssignedTask {
   productive_rules: string[]
   neutral_rules: string[]
   distracting_rules: string[]
+  schedule_days?: number[] | null
+  schedule_time?: string | null
+  schedule_minutes?: number | null
 }
 
 /** Whether a camera will actually send video (see capture/camera_apps.py). */
@@ -138,6 +187,13 @@ export const localHelper = {
     call<{ ok: boolean }>('/prefs', {
       method: 'POST',
       body: JSON.stringify({ ask_every_time: true }),
+    }),
+
+  /** Open the extension folder and the browser's extensions page, path on the clipboard. */
+  setupExtension: (browser: 'chrome' | 'edge') =>
+    call<{ ok: boolean; folder: string; browser: string }>('/extension/setup', {
+      method: 'POST',
+      body: JSON.stringify({ browser }),
     }),
 
   stop: () => call<{ ok: boolean }>('/sessions/stop', { method: 'POST', body: '{}' }, 10_000),

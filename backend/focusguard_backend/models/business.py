@@ -92,6 +92,14 @@ class Task(Base, TimestampMixin):
     neutral_rules: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     distracting_rules: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
 
+    #: A weekly work time: on these weekdays (0 = Monday) at `schedule_time`
+    #: ("HH:MM", the employee's own clock) the employee's computer starts this
+    #: task's session by itself for `schedule_minutes`. The employee can still
+    #: close it. Nullable so the columns can be added to an existing database.
+    schedule_days: Mapped[list | None] = mapped_column(JSON)
+    schedule_time: Mapped[str | None] = mapped_column(String(5))
+    schedule_minutes: Mapped[int | None] = mapped_column(Integer)
+
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
