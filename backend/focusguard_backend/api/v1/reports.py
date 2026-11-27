@@ -112,7 +112,7 @@ def summary(
 def recommendations(
     days: int = Query(7, ge=MIN_DAYS, le=MAX_DAYS),
     offset_minutes: int = Query(0, ge=MIN_OFFSET, le=MAX_OFFSET),
-    limit: int = Query(4, ge=1, le=8),
+    limit: int = Query(6, ge=1, le=12),
     scope: Scope = Depends(current_scope),
     db: Session = Depends(get_db),
 ) -> list[RecommendationOut]:
@@ -133,6 +133,7 @@ def recommendations(
             title=item.title,
             detail=item.detail,
             evidence=[{"label": e.label, "value": e.value} for e in item.evidence],
+            tips=list(item.tips),
         )
         for item in generate_recommendations(stats, limit=limit)
     ]

@@ -47,6 +47,24 @@ export function RecommendationCard({ item }: { item: RecommendationItem }) {
         <div className="min-w-0">
           <h3 className="font-semibold">{item.title}</h3>
           <p className="mt-1 text-sm text-[var(--color-muted)]">{item.detail}</p>
+          {item.tips && item.tips.length > 0 && (
+            <div className="mt-3">
+              <p className="text-xs font-semibold tracking-wide text-[var(--color-accent)] uppercase">
+                Try this
+              </p>
+              <ul className="mt-1.5 space-y-1.5">
+                {item.tips.map((tip) => (
+                  <li key={tip} className="flex gap-2 text-sm leading-relaxed">
+                    <span
+                      aria-hidden="true"
+                      className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-accent)]"
+                    />
+                    <span>{tip}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       </div>
 

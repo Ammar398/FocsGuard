@@ -87,8 +87,8 @@ class CameraSettings(BaseModel):
     #: unlocking the phone did not bring the video back. Reopening the DirectShow
     #: device is what recovers it, so a feed frozen for this long is reconnected
     #: automatically rather than left blank until the user restarts the agent.
-    no_signal_reconnect_seconds: float = 10.0
-    reconnect_interval_seconds: float = 3.0
+    no_signal_reconnect_seconds: float = 6.0
+    reconnect_interval_seconds: float = 1.0
     open_timeout_seconds: float = 10.0
 
 

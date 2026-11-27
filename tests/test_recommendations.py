@@ -30,6 +30,10 @@ from focusguard_shared.recommendations import (
     find_clinical_language,
     generate_recommendations,
 )
+from focusguard_shared.recommendations.rules import (
+    best_part_of_day,
+    phone_in_reach,
+)
 
 DAY = date(2026, 9, 1)
 
@@ -230,6 +234,7 @@ def test_every_rule_fires_at_least_once_under_fuzzing() -> None:
                     "PHONE_VISIBLE": (random.uniform(0, 600), random.randint(0, 40)),
                     "FACE_ABSENT": (random.uniform(0, minutes * 40), random.randint(0, 10)),
                     "DROWSINESS": (random.uniform(0, minutes * 20), random.randint(0, 8)),
+                    "GAZE_AWAY": (random.uniform(0, minutes * 20), random.randint(0, 8)),
                 },
                 activity={"youtube.com": random.uniform(0, minutes * 40)},
                 distracting_by_label={"youtube.com": random.uniform(0, minutes * 40)},
@@ -251,6 +256,9 @@ def test_every_rule_fires_at_least_once_under_fuzzing() -> None:
         "dominant_distraction",
         "sessions_without_breaks",
         "better_time_of_day",
+        "looking_away_often",
+        "short_focus_stretches",
+        "best_part_of_day",
         "going_well",
     }
     assert fired == expected, f"never fired: {sorted(expected - fired)}"
@@ -519,3 +527,24 @@ def test_nothing_classified_distracting_produces_no_claim() -> None:
     ids = {r.rule_id for r in generate_recommendations(stats, limit=8)}
 
     assert "dominant_distraction" not in ids
+
+
+def test_tips_come_with_the_advice_and_say_when_it_happens():
+    sessions = [
+        _session(index, hour=20, minutes=60, score=60,
+                 events={"PHONE_VISIBLE": (300, 12)})
+        for index in range(3)
+    ] + [_session(9, hour=9, minutes=60, score=70, events={"PHONE_VISIBLE": (30, 1)})]
+    phone = phone_in_reach(_stats(*sessions))
+    assert phone is not None and phone.tips
+    assert any(
+        e.label == "Happened most in" and e.value.startswith("evening") for e in phone.evidence
+    )
+
+
+def test_the_best_part_of_the_day_is_named():
+    sessions = [_session(i, hour=9, minutes=60, score=85) for i in range(2)] + [
+        _session(5 + i, hour=15, minutes=60, score=60) for i in range(2)
+    ]
+    result = best_part_of_day(_stats(*sessions))
+    assert result is not None and result.title == "Your morning sessions went best"

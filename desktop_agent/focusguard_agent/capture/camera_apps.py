@@ -288,3 +288,70 @@ def check_camera(
             else f"Open {app.label} and connect your phone - FocusGuard is waiting for video."
         ),
     )
+
+
+def frames_look_live(previous, current) -> bool:
+    """Two small greyscale frames: is this a real picture, not a placeholder?
+
+    A phone-camera app with no phone connected sends black, or one fixed
+    picture. Real video is never pure black and is never pixel-identical twice
+    (sensor noise), so "bright enough and changing" means a phone is sending.
+    """
+    import numpy as np
+
+    if previous is None or current is None:
+        return False
+    if float(current.mean()) < 8.0:
+        return False
+    return float(np.abs(current.astype("float32") - previous.astype("float32")).mean()) > 0.0
+
+
+def wait_for_video(device_name: str, timeout: float = 25.0) -> bool:
+    """Open the camera briefly and wait until real video arrives.
+
+    Used before a session or camera check starts on a phone camera (Camo,
+    DroidCam): the window then opens on a live picture straight away, instead
+    of a black one that recovers only after the agent's reconnect cycle.
+    Returns as soon as video is live; False after `timeout`. Nothing is kept.
+    """
+    import time
+
+    import cv2
+
+    from focusguard_agent.capture.devices import find_device
+
+    device = find_device(device_name)
+    if device is None:
+        return False
+    deadline = time.monotonic() + timeout
+    capture = None
+    opened_at = 0.0
+    previous = None
+    try:
+        while time.monotonic() < deadline:
+            # A virtual camera opened before its phone connected can stay on
+            # the placeholder until it is reopened, so reopen every 6 seconds.
+            if capture is None or time.monotonic() - opened_at > 6.0:
+                if capture is not None:
+                    capture.release()
+                capture = cv2.VideoCapture(device.index, cv2.CAP_DSHOW)
+                opened_at = time.monotonic()
+                previous = None
+                if not capture.isOpened():
+                    time.sleep(0.5)
+                    continue
+            ok, image = capture.read()
+            if not ok or image is None or image.size == 0:
+                time.sleep(0.05)
+                continue
+            small = cv2.resize(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), (64, 36))
+            if frames_look_live(previous, small):
+                return True
+            previous = small
+    except cv2.error:
+        logger.warning("Video check failed", exc_info=True)
+        return False
+    finally:
+        if capture is not None:
+            capture.release()
+    return False

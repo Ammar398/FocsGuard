@@ -73,7 +73,7 @@ from pathlib import Path
 from typing import Any
 
 from focusguard_agent.calibration.ear_calibration import load_profile
-from focusguard_agent.capture.camera_apps import CameraReadiness, check_camera
+from focusguard_agent.capture.camera_apps import CameraReadiness, check_camera, wait_for_video
 from focusguard_agent.config import AgentSettings, get_settings
 from focusguard_agent.synchronization.client import (
     BackendClient,
@@ -148,6 +148,44 @@ def _browser_exe(browser: str) -> str | None:
     return None
 
 
+def copy_to_clipboard(text: str) -> bool:
+    """Put plain text on the Windows clipboard (no byte-order mark, no newline).
+
+    clip.exe was used before; it leaves an invisible U+FEFF in front of the
+    text, which made the pasted folder path "not found" in Chrome's dialog.
+    """
+    if sys.platform != "win32":
+        return False
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.GlobalAlloc.restype = wintypes.HGLOBAL
+    kernel32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+    kernel32.GlobalLock.restype = wintypes.LPVOID
+    kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+    user32.OpenClipboard.argtypes = [wintypes.HWND]
+    user32.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
+    user32.SetClipboardData.restype = wintypes.HANDLE
+
+    data = text.encode("utf-16-le") + b"\0\0"
+    handle = kernel32.GlobalAlloc(0x0002, len(data))  # GMEM_MOVEABLE
+    if not handle:
+        return False
+    pointer = kernel32.GlobalLock(handle)
+    ctypes.memmove(pointer, data, len(data))
+    kernel32.GlobalUnlock(handle)
+    if not user32.OpenClipboard(None):
+        return False
+    try:
+        user32.EmptyClipboard()
+        return bool(user32.SetClipboardData(13, handle))  # CF_UNICODETEXT
+    finally:
+        user32.CloseClipboard()
+
+
 def open_extension_setup(folder: Path, browser: str) -> None:
     """Open the extension folder, copy its path, and open the extensions page.
 
@@ -157,14 +195,14 @@ def open_extension_setup(folder: Path, browser: str) -> None:
     """
     if sys.platform != "win32":
         return
-    try:  # the path on the clipboard, ready for the "Load unpacked" folder box
-        subprocess.run(  # noqa: S603
-            ["clip.exe"], input=("\ufeff" + str(folder)).encode("utf-16-le"),
-            check=False, timeout=5,
-        )
-    except (OSError, subprocess.SubprocessError):
-        pass
+    # The path on the clipboard, ready for the "Load unpacked" folder box.
+    try:
+        copy_to_clipboard(str(folder))
+    except OSError:
+        logger.warning("Could not copy the extension path", exc_info=True)
     os.startfile(str(folder))  # noqa: S606 - Explorer, on a path we chose
+    # Chrome often ignores chrome:// addresses handed over from outside, so the
+    # portal also shows the address with its own Copy button.
     exe = _browser_exe(browser)
     if exe:
         page = "edge://extensions/" if browser == "edge" else "chrome://extensions/"
@@ -370,8 +408,10 @@ class FocusGuardHelper:
         camera_dialog: CameraDialog = native_camera_dialog,
         camera_probe: CameraProbe | None = None,
         extension_opener: ExtensionOpener = open_extension_setup,
+        video_probe: Callable[[str], bool] = wait_for_video,
     ) -> None:
         self.settings = settings or get_settings()
+        self._video_probe = video_probe
         self._extension_opener = extension_opener
         #: (monotonic time, switched on?) of the extension's last hello.
         self._extension_seen: tuple[float, bool] | None = None
@@ -450,6 +490,23 @@ class FocusGuardHelper:
         if not readiness.ready:
             raise HelperError(424, readiness.message, {"camera": readiness.as_dict()})
         return readiness
+
+    def _wait_for_video(self, readiness: CameraReadiness) -> None:
+        """Phone cameras: start only once the phone is really sending video.
+
+        Called after the person approved the camera, never before.
+        """
+        if not readiness.app or not readiness.device:
+            return  # a built-in or USB webcam is live as soon as it opens
+        if self._video_probe(readiness.device):
+            return
+        raise HelperError(
+            424,
+            f"{readiness.app} is open, but no video is coming from your phone. On the phone, "
+            f"open {readiness.app} and connect it (USB cable, or the same Wi-Fi as this "
+            "computer) until you see yourself in the app on this computer, then try again.",
+            {"camera": {**readiness.as_dict(), "ready": False}},
+        )
 
     def _chosen_camera(self) -> str | None:
         """The camera a session would use right now (webcam first). Cached 15 s:
@@ -778,6 +835,7 @@ class FocusGuardHelper:
             "Nothing is recorded or uploaded. The result is one number, kept on this\n"
             "computer.",
         )
+        self._wait_for_video(readiness)
 
         self._camera_process = self._camera_launcher(["--show", "--keep-open", "--wait-on-exit"])
         logger.info("Camera check opened from the portal")
@@ -842,6 +900,7 @@ class FocusGuardHelper:
                 "A FocusGuard window stays open for as long as monitoring runs."
             )
         self._approve_camera("FocusGuard - start monitoring?", question)
+        self._wait_for_video(readiness)
 
         # --preview: a live analysis window that stays up for the whole
         # session; closing it is how the person ends the session.

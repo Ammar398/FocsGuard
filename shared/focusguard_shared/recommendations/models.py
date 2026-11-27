@@ -85,6 +85,9 @@ class Recommendation:
     #: The numbers that fired the rule. Never empty - see the module docstring.
     evidence: list[Evidence] = field(default_factory=list)
 
+    #: Concrete things to try, most useful first. Short, practical, optional.
+    tips: list[str] = field(default_factory=list)
+
     def __post_init__(self) -> None:
         if not self.evidence:
             raise ValueError(
@@ -94,6 +97,8 @@ class Recommendation:
         assert_no_clinical_language(self.title, self.detail)
         for item in self.evidence:
             assert_no_clinical_language(item.label, item.value)
+        for tip in self.tips:
+            assert_no_clinical_language(tip)
 
 
 @dataclass(frozen=True)

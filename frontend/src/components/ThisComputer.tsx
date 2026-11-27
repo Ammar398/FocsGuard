@@ -443,6 +443,48 @@ function CameraLine({
 
 // --- browser extension -------------------------------------------------------
 
+/** Copy text; falls back to a hidden textarea where the Clipboard API is refused. */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    const area = document.createElement('textarea')
+    area.value = text
+    area.setAttribute('readonly', '')
+    area.style.position = 'fixed'
+    area.style.opacity = '0'
+    document.body.appendChild(area)
+    area.select()
+    let ok = false
+    try {
+      ok = document.execCommand('copy')
+    } catch {
+      ok = false
+    }
+    document.body.removeChild(area)
+    return ok
+  }
+}
+
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void copyText(text).then((ok) => {
+          setState(ok ? 'copied' : 'failed')
+          window.setTimeout(() => setState('idle'), 2500)
+        })
+      }}
+      className="rounded-lg border border-[var(--color-line)] px-2.5 py-1 text-xs font-semibold transition hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+    >
+      {state === 'copied' ? 'Copied ✓' : state === 'failed' ? 'Select and copy it' : label}
+    </button>
+  )
+}
+
 function currentBrowser(): 'chrome' | 'edge' {
   return navigator.userAgent.includes('Edg/') ? 'edge' : 'chrome'
 }
@@ -464,7 +506,6 @@ function ExtensionSetup({
   const browserName = browser === 'edge' ? 'Edge' : 'Chrome'
   const page = browser === 'edge' ? 'edge://extensions' : 'chrome://extensions'
   const [opened, setOpened] = useState(false)
-  const [copied, setCopied] = useState(false)
   const folder = status.extension?.folder ?? null
   // A Helper installed before the extension existed does not report it.
   const outdated = status.extension === undefined || folder === null
@@ -533,36 +574,28 @@ function ExtensionSetup({
               {!employee && <SecondaryButton onClick={onSkip}>Skip for now</SecondaryButton>}
             </div>
 
-            <ol className="space-y-2">
-              {[
-                `The button opens ${browserName}'s extensions page and the extension's folder. (If the page does not open, type ${page} in the address bar.)`,
-                'Turn on Developer mode (top right of the extensions page).',
-                'Click Load unpacked. The folder path is already copied: paste it (Ctrl+V) into the folder box and click Select Folder.',
-                'Done. This page notices the extension by itself within 15 seconds.',
-              ].map((text, index) => (
-                <li key={text} className="flex gap-3">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-accent-soft)] text-xs font-semibold text-[var(--color-accent)]">
-                    {index + 1}
-                  </span>
-                  <span className="pt-0.5 leading-relaxed">{text}</span>
-                </li>
-              ))}
+            <ol className="space-y-3">
+              <SetupStep n={1}>
+                Open a new tab, paste this address and press Enter:{' '}
+                <code className="rounded bg-[var(--color-canvas)] px-1.5 py-0.5">{page}</code>{' '}
+                <CopyButton text={page} label="Copy address" />
+              </SetupStep>
+              <SetupStep n={2}>Turn on <strong>Developer mode</strong> (top right of that page).</SetupStep>
+              <SetupStep n={3}>
+                Click <strong>Load unpacked</strong>, paste this folder into the folder box
+                (Ctrl+V) and click <strong>Select Folder</strong>:
+                <span className="mt-1.5 flex flex-wrap items-center gap-2">
+                  <code className="rounded bg-[var(--color-canvas)] px-1.5 py-0.5 text-xs break-all select-all">
+                    {folder}
+                  </code>
+                  <CopyButton text={folder ?? ''} label="Copy folder" />
+                </span>
+              </SetupStep>
+              <SetupStep n={4}>Done. This page notices the extension by itself within 15 seconds.</SetupStep>
             </ol>
-
-            <p className="flex flex-wrap items-center gap-2 text-xs text-[var(--color-muted)]">
-              Folder:
-              <code className="rounded bg-[var(--color-canvas)] px-1.5 py-0.5 break-all">
-                {folder}
-              </code>
-              <button
-                type="button"
-                onClick={() => {
-                  void navigator.clipboard?.writeText(folder ?? '').then(() => setCopied(true))
-                }}
-                className="font-medium text-[var(--color-accent)] hover:underline"
-              >
-                {copied ? 'Copied' : 'Copy'}
-              </button>
+            <p className="text-xs text-[var(--color-muted)]">
+              "{`Add to ${browserName}`}" above also opens the folder in File Explorer and tries to
+              open the extensions page for you.
             </p>
 
             {opened && (
@@ -575,6 +608,17 @@ function ExtensionSetup({
         )}
       </div>
     </StepPanel>
+  )
+}
+
+function SetupStep({ n, children }: { n: number; children: ReactNode }) {
+  return (
+    <li className="flex gap-3">
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-accent-soft)] text-xs font-semibold text-[var(--color-accent)]">
+        {n}
+      </span>
+      <span className="min-w-0 pt-0.5 leading-relaxed">{children}</span>
+    </li>
   )
 }
 

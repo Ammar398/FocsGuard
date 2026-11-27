@@ -37,6 +37,7 @@ from focusguard_shared.recommendations.models import (
     Priority,
     Recommendation,
     RecommendationKind,
+    SessionFacts,
 )
 
 # --- thresholds -------------------------------------------------------------
@@ -77,6 +78,20 @@ MIN_SESSIONS_PER_TIME_GROUP = 2
 #: A week worth congratulating.
 STRONG_AVERAGE_SCORE = 78.0
 
+#: Looking away from the screen or down at the desk, as a share of monitored time.
+LOOKING_AWAY_SHARE = 0.10
+
+#: A typical longest focus stretch below this suggests trying timed work blocks.
+SHORT_STRETCH_SECONDS = 15 * 60
+
+#: Parts of the day, by local start hour. Used to say *when* something happens.
+TIME_BLOCKS: tuple[tuple[str, int, int], ...] = (
+    ("morning", 5, 12),
+    ("afternoon", 12, 17),
+    ("evening", 17, 22),
+    ("night", 22, 29),  # 22:00 to 05:00 the next day
+)
+
 
 def _minutes(seconds: float) -> str:
     """"45 minutes" or "1h 20m". Never "2718.4 seconds"."""
@@ -92,6 +107,35 @@ def _share(part: float, whole: float) -> float:
 
 def _percent(part: float, whole: float) -> str:
     return f"{round(_share(part, whole) * 100)}%"
+
+
+def _block(hour: int) -> str:
+    """"morning", "afternoon", "evening" or "night" for a local start hour."""
+    for name, start, end in TIME_BLOCKS:
+        if start <= hour < end or start <= hour + 24 < end:
+            return name
+    return "night"
+
+
+def _when(stats: FocusStatistics, weight: Callable[[SessionFacts], float]) -> str | None:
+    """The part of the day where `weight` piles up most, if one clearly leads.
+
+    Returns e.g. "evening sessions (62%)" only when that part of the day holds
+    at least half of it; otherwise None rather than a guess.
+    """
+    totals: dict[str, float] = {}
+    for session in stats.sessions:
+        value = weight(session)
+        if value > 0:
+            name = _block(session.start_hour)
+            totals[name] = totals.get(name, 0.0) + value
+    whole = sum(totals.values())
+    if whole <= 0 or len({_block(s.start_hour) for s in stats.sessions}) < 2:
+        return None
+    name, value = max(totals.items(), key=lambda item: item[1])
+    if _share(value, whole) < 0.5:
+        return None
+    return f"{name} sessions ({_percent(value, whole)})"
 
 
 # --- the rules --------------------------------------------------------------
@@ -137,8 +181,26 @@ def phone_in_reach(stats: FocusStatistics) -> Recommendation | None:
             Evidence(
                 "Sessions affected", f"{sessions_affected} of {stats.session_count}"
             ),
+            *_when_evidence(
+                stats, "Happened most in",
+                lambda s: s.event_counts.get("PHONE_VISIBLE", 0),
+            ),
+        ],
+        tips=[
+            "Before starting, put the phone in another room or a drawer, face down and on silent.",
+            "Turn on Do Not Disturb or Focus mode for the length of the session.",
+            "Keep a sheet of paper next to you: write down anything you want to check "
+            "and look at it in the break.",
+            "Give the phone a fixed time instead: 5 minutes after every 25-minute block.",
         ],
     )
+
+
+def _when_evidence(
+    stats: FocusStatistics, label: str, weight: Callable[[SessionFacts], float]
+) -> list[Evidence]:
+    when = _when(stats, weight)
+    return [Evidence(label, when)] if when else []
 
 
 def frequent_interruptions(stats: FocusStatistics) -> Recommendation | None:
@@ -166,6 +228,15 @@ def frequent_interruptions(stats: FocusStatistics) -> Recommendation | None:
             Evidence("Time away from the desk", _minutes(away)),
             Evidence("Share of monitored time", _percent(away, stats.total_seconds)),
             Evidence("Times you stepped away", str(count)),
+            *_when_evidence(
+                stats, "Happened most in", lambda s: s.event_seconds.get("FACE_ABSENT", 0.0)
+            ),
+        ],
+        tips=[
+            "Get water, snacks and everything you need on the desk before you press Start.",
+            "Tell the people around you when your session ends, so questions can wait until then.",
+            "Wear headphones or close the door as a visible 'busy' signal.",
+            "If you leave on purpose for a break, stop the session and start a new one after.",
         ],
     )
 
@@ -203,6 +274,16 @@ def signs_of_tiredness(stats: FocusStatistics) -> Recommendation | None:
             Evidence("Time showing tiredness", _minutes(drowsy)),
             Evidence("Share of monitored time", _percent(drowsy, stats.total_seconds)),
             Evidence("Sessions affected", f"{affected} of {stats.session_count}"),
+            *_when_evidence(
+                stats, "Happened most in", lambda s: s.event_seconds.get("DROWSINESS", 0.0)
+            ),
+        ],
+        tips=[
+            "Move the hardest work to the part of the day when you feel most awake.",
+            "Take a 5-minute walk or stretch every 45 minutes: stand up, "
+            "do not just switch screens.",
+            "Keep the room bright and a little cool, and drink water during the session.",
+            "A short rest before a session often helps more than pushing through.",
         ],
     )
 
@@ -254,6 +335,17 @@ def dominant_distraction(stats: FocusStatistics) -> Recommendation | None:
             Evidence("Time spent", _minutes(seconds)),
             Evidence("Share of monitored time", _percent(seconds, stats.total_seconds)),
             Evidence("Total off-task time", _minutes(distracting_total)),
+            *_when_evidence(
+                stats, "Happened most in",
+                lambda s: s.distracting_seconds_by_label.get(label, 0.0),
+            ),
+        ],
+        tips=[
+            f"Close {label} before you start, and log out so returning takes an extra step.",
+            f"Use a site blocker (e.g. the browser's own or LeechBlock) for {label} during "
+            "work hours.",
+            f"Keep {label} for the break: allow it for 5 minutes after each focused block.",
+            "If it is really needed for the work, list it as productive for that task.",
         ],
     )
 
@@ -290,6 +382,12 @@ def sessions_without_breaks(stats: FocusStatistics) -> Recommendation | None:
             ),
             Evidence("Longest unbroken stretch in them", _minutes(longest)),
             Evidence("Session length threshold", _minutes(LONG_SESSION_SECONDS)),
+        ],
+        tips=[
+            "Try the Pomodoro rhythm: 25 minutes of work, then a 5-minute break; a longer "
+            "break after four rounds.",
+            "Write one clear goal for each block before you start it.",
+            "Split big work into small steps you can finish inside one block.",
         ],
     )
 
@@ -335,6 +433,11 @@ def better_time_of_day(stats: FocusStatistics) -> Recommendation | None:
                 "Sessions compared", f"{len(earlier)} earlier, {len(late)} late"
             ),
         ],
+        tips=[
+            "Do the hardest task earlier, and keep late hours for light work like revision.",
+            "Set a fixed stop time at night and plan tomorrow's first task before you stop.",
+            "Keep screens dim and avoid starting new, demanding work after 10pm.",
+        ],
     )
 
 
@@ -364,6 +467,10 @@ def going_well(stats: FocusStatistics) -> Recommendation | None:
             Evidence("Sessions", str(stats.session_count)),
             Evidence("Focused time", _minutes(stats.focused_seconds)),
         ],
+        tips=[
+            "Note what this setup had (time, place, phone away) and repeat it on purpose.",
+            "Try stretching a focus block by 5-10 minutes now that the rhythm works.",
+        ],
     )
 
 
@@ -390,6 +497,134 @@ def not_enough_data(stats: FocusStatistics) -> Recommendation | None:
             Evidence("Sessions so far", str(stats.session_count)),
             Evidence("Needed", str(MIN_SESSIONS_FOR_ADVICE)),
         ],
+        tips=[
+            "Run a few sessions at different times of day; the comparison shows your best hours.",
+            "In the meantime: phone out of reach, one task at a time, a short break every 25-30 "
+            "minutes.",
+        ],
+    )
+
+
+def looking_away_often(stats: FocusStatistics) -> Recommendation | None:
+    """Eyes off the screen, or head down at the desk, for a noticeable share of time."""
+    if stats.session_count < MIN_SESSIONS_FOR_ADVICE:
+        return None
+
+    away = stats.event_seconds("GAZE_AWAY")
+    down = stats.event_seconds("HEAD_DOWN")
+    share = _share(away + down, stats.total_seconds)
+    if share < LOOKING_AWAY_SHARE:
+        return None
+    affected = sum(
+        1 for s in stats.sessions
+        if s.event_counts.get("GAZE_AWAY", 0) or s.event_counts.get("HEAD_DOWN", 0)
+    )
+    if _share(affected, stats.session_count) < HABIT_SESSION_SHARE:
+        return None
+
+    return Recommendation(
+        rule_id="looking_away_often",
+        kind=RecommendationKind.ENVIRONMENT,
+        priority=Priority.MEDIUM,
+        title="Your eyes were often off the screen",
+        detail=(
+            "A noticeable share of these sessions was spent looking away from the screen "
+            "or down at the desk. Sometimes that is reading notes; often it is drifting."
+        ),
+        evidence=[
+            Evidence("Looking away", _minutes(away)),
+            Evidence("Head down", _minutes(down)),
+            Evidence("Share of monitored time", _percent(away + down, stats.total_seconds)),
+            Evidence("Sessions affected", f"{affected} of {stats.session_count}"),
+            *_when_evidence(
+                stats, "Happened most in",
+                lambda s: s.event_seconds.get("GAZE_AWAY", 0.0)
+                + s.event_seconds.get("HEAD_DOWN", 0.0),
+            ),
+        ],
+        tips=[
+            "Put notes or a book on a stand next to the screen instead of flat on the desk.",
+            "Clear the desk of anything not needed for this task.",
+            "Face a wall or a plain background rather than a window or a busy room.",
+            "When your mind wanders, write the thought down and go back to the task.",
+        ],
+    )
+
+
+def short_focus_stretches(stats: FocusStatistics) -> Recommendation | None:
+    """The longest unbroken stretch is short in most sessions, whatever their length."""
+    if stats.session_count < MIN_SESSIONS_FOR_ADVICE:
+        return None
+
+    short = [s for s in stats.sessions if s.longest_focus_block_seconds < SHORT_STRETCH_SECONDS]
+    if _share(len(short), stats.session_count) < 0.6:
+        return None
+    blocks = sorted(s.longest_focus_block_seconds for s in stats.sessions)
+    typical = blocks[len(blocks) // 2]
+
+    return Recommendation(
+        rule_id="short_focus_stretches",
+        kind=RecommendationKind.BREAKS,
+        priority=Priority.LOW,
+        title="Build longer stretches of focus, a few minutes at a time",
+        detail=(
+            f"In most sessions the longest unbroken stretch was under "
+            f"{_minutes(SHORT_STRETCH_SECONDS)}. Timed blocks with a planned break make the "
+            "next stretch easier to hold."
+        ),
+        evidence=[
+            Evidence("Typical longest stretch", _minutes(typical)),
+            Evidence("Sessions under 15 minutes", f"{len(short)} of {stats.session_count}"),
+        ],
+        tips=[
+            "Start with 15-minute blocks and make them 5 minutes longer each week.",
+            "Use a visible timer, and do not switch tasks until it rings.",
+            "Close every tab and app not needed for this block before you start.",
+            "Decide the very next small step before the block starts.",
+        ],
+    )
+
+
+def best_part_of_day(stats: FocusStatistics) -> Recommendation | None:
+    """Which part of the day the sessions went best, when the gap is real."""
+    if stats.session_count < MIN_SESSIONS_FOR_ADVICE:
+        return None
+
+    groups: dict[str, list[SessionFacts]] = {}
+    for session in stats.sessions:
+        groups.setdefault(_block(session.start_hour), []).append(session)
+    averages = {
+        name: sum(s.average_focus_score for s in items) / len(items)
+        for name, items in groups.items()
+        if len(items) >= MIN_SESSIONS_PER_TIME_GROUP
+    }
+    if len(averages) < 2:
+        return None
+    best = max(averages, key=averages.__getitem__)
+    worst = min(averages, key=averages.__getitem__)
+    gap = averages[best] - averages[worst]
+    if gap < MEANINGFUL_SCORE_GAP or worst == "night":
+        return None  # night against the rest is better_time_of_day's job
+
+    return Recommendation(
+        rule_id="best_part_of_day",
+        kind=RecommendationKind.SCHEDULE,
+        priority=Priority.MEDIUM,
+        title=f"Your {best} sessions went best",
+        detail=(
+            f"Sessions started in the {best} scored clearly higher than {worst} ones. "
+            f"Putting the most demanding work in the {best} uses that."
+        ),
+        evidence=[
+            Evidence(f"Average in the {best}", f"{averages[best]:.0f} / 100"),
+            Evidence(f"Average in the {worst}", f"{averages[worst]:.0f} / 100"),
+            Evidence("Difference", f"{gap:.0f} points"),
+        ],
+        tips=[
+            f"Plan tomorrow's hardest task for the {best}.",
+            f"Use {worst} time for lighter work: revision, email, planning.",
+            "Keep the same start time for a week; a routine makes starting easier.",
+        ],
     )
 
 
@@ -402,6 +637,9 @@ ALL_RULES: tuple[Callable[[FocusStatistics], Recommendation | None], ...] = (
     dominant_distraction,
     sessions_without_breaks,
     better_time_of_day,
+    looking_away_often,
+    short_focus_stretches,
+    best_part_of_day,
     going_well,
 )
 
@@ -409,7 +647,7 @@ _PRIORITY_ORDER = {Priority.HIGH: 0, Priority.MEDIUM: 1, Priority.LOW: 2}
 
 
 def generate_recommendations(
-    stats: FocusStatistics, limit: int = 4
+    stats: FocusStatistics, limit: int = 6
 ) -> list[Recommendation]:
     """Run every rule and return the most important results.
 

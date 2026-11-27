@@ -388,3 +388,5 @@ class RecommendationOut(BaseModel):
     title: str
     detail: str
     evidence: list[EvidenceOut]
+    #: Practical things to try.
+    tips: list[str] = Field(default_factory=list)

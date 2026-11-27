@@ -97,6 +97,7 @@ def world(tmp_path, monkeypatch):
 
     readiness = {"value": CameraReadiness(ready=True, device="Camo", message="ok")}
     opened: list[tuple] = []
+    video = {"live": True}
 
     helper = FocusGuardHelper(
         settings=AgentSettings(),
@@ -107,13 +108,14 @@ def world(tmp_path, monkeypatch):
         camera_dialog=camera_dialog,
         camera_probe=lambda: readiness["value"],
         extension_opener=lambda folder, browser: opened.append((folder, browser)),
+        video_probe=lambda device: video["live"],
     )
     server = HelperServer(helper, port=0)
     assert server.start()
     yield {
         "port": server.port, "answers": answers, "asked": asked,
         "launched": launched, "cameras": cameras, "readiness": readiness,
-        "opened": opened, "helper": helper,
+        "opened": opened, "helper": helper, "video": video,
     }
     server.stop()
 
@@ -554,3 +556,36 @@ def test_students_have_no_schedule(world) -> None:
     save_credential(DeviceCredential("dev", "secret", "http://127.0.0.1:8000", user_id=7))
     FakeClient.tasks = [SCHEDULED]
     assert world["helper"].scheduled_tick(MONDAY_9_30) is None
+
+
+# --- phone cameras: wait for real video --------------------------------------------
+
+from focusguard_agent.capture.camera_apps import frames_look_live  # noqa: E402
+
+
+def test_a_phone_camera_without_video_is_refused_after_approval(world) -> None:
+    world["readiness"]["value"] = CameraReadiness(
+        ready=True, device="Camo", app="Camo", app_running=True, message="open")
+    world["video"]["live"] = False
+    world["answers"].append(True)
+    status, body, _ = call(world, "POST", "/sessions/start", {"name": "Study"})
+    assert status == 424 and "no video is coming from your phone" in body["error"]
+    assert len(world["asked"]) == 1 and world["launched"] == []
+
+    world["video"]["live"] = True
+    world["answers"].append(True)
+    status, _, _ = call(world, "POST", "/sessions/start", {"name": "Study"})
+    assert status == 200 and world["launched"]
+
+
+def test_live_video_is_bright_and_changing() -> None:
+    import numpy as np
+
+    black = np.zeros((36, 64), dtype=np.uint8)
+    picture = np.full((36, 64), 120, dtype=np.uint8)
+    noisy = picture.copy()
+    noisy[0, 0] = 121
+    assert not frames_look_live(None, picture)
+    assert not frames_look_live(black, black)
+    assert not frames_look_live(picture, picture)  # a frozen placeholder
+    assert frames_look_live(picture, noisy)

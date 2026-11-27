@@ -144,4 +144,6 @@ export interface RecommendationItem {
   title: string
   detail: string
   evidence: EvidenceItem[]
+  /** Practical things to try. */
+  tips?: string[]
 }
