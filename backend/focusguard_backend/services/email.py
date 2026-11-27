@@ -277,7 +277,8 @@ def main(argv: list[str] | None = None) -> int:
         print("Usage: python -m focusguard_backend.services.email you@example.com")
         return 2
     mailer = get_mailer()
-    kind = {"resend": "Resend", "brevo": "Brevo", "smtp": "SMTP"}.get(delivery(), "the dev outbox (not sent)")
+    names = {"resend": "Resend", "brevo": "Brevo", "smtp": "SMTP"}
+    kind = names.get(delivery(), "the dev outbox (not sent)")
     try:
         mailer.send(code_email(args[0], "123456", "VERIFY_EMAIL", 15))
     except Exception as error:  # noqa: BLE001
