@@ -67,3 +67,9 @@ backend/*.db-wal
 
 # Emails saved instead of sent when no SMTP server is configured
 dev_outbox/
+
+# Claude Code preview settings: local only
+.claude/
+
+# Handoff zip for another device (built locally, never committed)
+handoff/
