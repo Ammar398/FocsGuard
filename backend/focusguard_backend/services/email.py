@@ -6,6 +6,9 @@ WHERE MAIL GOES
   over HTTPS. This is the one for a hosted server: Render's free plan (and many
   other hosts) block the SMTP ports, so SMTP silently never connects there.
   `FOCUSGUARD_MAIL_FROM` must be an address on a domain verified in Resend.
+* **Brevo**, when `FOCUSGUARD_BREVO_API_KEY` is set - also HTTPS, and it can
+  send from a single verified address such as your own Gmail, so no domain is
+  needed. `FOCUSGUARD_MAIL_FROM` must be that verified address.
 * **SMTP**, when `FOCUSGUARD_SMTP_HOST` is set - a real mail server, e.g. Gmail
   with an app password, Outlook, SendGrid or Mailgun SMTP.
 * **A local outbox folder** otherwise (`FOCUSGUARD_DEV_OUTBOX`, default
@@ -121,6 +124,40 @@ class ResendMailer:
         logger.info("Email sent via Resend to %s", message.to)
 
 
+class BrevoMailer:
+    """Sends through Brevo's HTTPS API (https://developers.brevo.com)."""
+
+    endpoint = "https://api.brevo.com/v3/smtp/email"
+
+    def __init__(self) -> None:
+        self.api_key = os.environ["FOCUSGUARD_BREVO_API_KEY"].strip()
+
+    def send(self, message: OutgoingEmail) -> None:
+        from email.utils import parseaddr
+
+        import httpx
+
+        name, address = parseaddr(_sender())
+        response = httpx.post(
+            self.endpoint,
+            headers={"api-key": self.api_key, "accept": "application/json"},
+            json={
+                "sender": {"name": name or "FocusGuard", "email": address},
+                "to": [{"email": message.to}],
+                "subject": message.subject,
+                "htmlContent": message.html,
+                "textContent": message.text,
+            },
+            timeout=20,
+        )
+        if response.status_code >= 400:
+            # e.g. "sender not valid" (address not verified in Brevo) or
+            # "unrecognised IP address" (Brevo's authorised-IPs lock is on).
+            raise RuntimeError(f"Brevo refused the email ({response.status_code}): "
+                               f"{response.text[:300]}")
+        logger.info("Email sent via Brevo to %s", message.to)
+
+
 class OutboxMailer:
     """Writes each message to a folder instead of sending it (development)."""
 
@@ -150,9 +187,11 @@ _mailer: Mailer | None = None
 
 
 def delivery() -> str:
-    """How email leaves this server: "resend", "smtp" or "outbox" (nowhere)."""
+    """How email leaves this server: "resend", "brevo", "smtp" or "outbox" (nowhere)."""
     if os.environ.get("FOCUSGUARD_RESEND_API_KEY", "").strip():
         return "resend"
+    if os.environ.get("FOCUSGUARD_BREVO_API_KEY", "").strip():
+        return "brevo"
     if os.environ.get("FOCUSGUARD_SMTP_HOST", "").strip():
         return "smtp"
     return "outbox"
@@ -164,6 +203,7 @@ def get_mailer() -> Mailer:
         route = delivery()
         _mailer = (
             ResendMailer() if route == "resend"
+            else BrevoMailer() if route == "brevo"
             else SmtpMailer() if route == "smtp"
             else OutboxMailer()
         )
@@ -237,12 +277,12 @@ def main(argv: list[str] | None = None) -> int:
         print("Usage: python -m focusguard_backend.services.email you@example.com")
         return 2
     mailer = get_mailer()
-    kind = {"resend": "Resend", "smtp": "SMTP"}.get(delivery(), "the dev outbox (not sent)")
+    kind = {"resend": "Resend", "brevo": "Brevo", "smtp": "SMTP"}.get(delivery(), "the dev outbox (not sent)")
     try:
         mailer.send(code_email(args[0], "123456", "VERIFY_EMAIL", 15))
     except Exception as error:  # noqa: BLE001
         print(f"Sending failed: {error}")
-        print("Check FOCUSGUARD_RESEND_API_KEY / FOCUSGUARD_MAIL_FROM, or the SMTP settings.")
+        print("Check the API key (Resend/Brevo) and FOCUSGUARD_MAIL_FROM, or the SMTP settings.")
         return 1
     print(f"Test email (code 123 456) sent to {args[0]} via {kind}.")
     return 0

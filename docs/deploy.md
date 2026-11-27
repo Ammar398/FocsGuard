@@ -105,6 +105,13 @@ connects from there. FocusGuard sends through **Resend** over HTTPS instead.
 3. **Save, rebuild and deploy.** `https://<your-site>/health` then shows
    `"email": "resend", "email_verification": true`.
 
+**No domain? Use Brevo instead** (free, 300 emails a day): create a Brevo
+account, add your Gmail under **Senders** and click the link Brevo emails you,
+turn off **Security → Authorised IPs** (Render's addresses change), create an
+API key under **SMTP & API → API Keys**, then set `FOCUSGUARD_BREVO_API_KEY` and
+`FOCUSGUARD_MAIL_FROM` = `FocusGuard <your.address@gmail.com>`. Mail sent "from
+gmail.com" by another service can land in Spam; the sign-up page says so.
+
 `FOCUSGUARD_REQUIRE_EMAIL_VERIFICATION` is `auto`: codes are asked for exactly
 when email can be sent. Set it to `0` to switch verification off on purpose.
 If an email is refused (wrong key, unverified domain), the reason is in the

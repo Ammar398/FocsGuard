@@ -52,6 +52,7 @@ def client(tmp_path, monkeypatch, mailer):
     # (see test_without_real_email_verification_is_off_by_itself).
     monkeypatch.setenv("FOCUSGUARD_REQUIRE_EMAIL_VERIFICATION", "1")
     monkeypatch.delenv("FOCUSGUARD_RESEND_API_KEY", raising=False)
+    monkeypatch.delenv("FOCUSGUARD_BREVO_API_KEY", raising=False)
     monkeypatch.delenv("FOCUSGUARD_SMTP_HOST", raising=False)
     reset_engine()
     rate_limit.reset_all()
@@ -419,3 +420,42 @@ def test_an_email_that_failed_to_send_does_not_block_send_again(client, mailer):
     assert client.post(
         "/api/v1/auth/verify-email", json={"email": EMAIL, "code": code_for(mailer)}
     ).status_code == 200
+
+
+def test_brevo_sends_from_the_verified_gmail_over_https(client, monkeypatch):
+    import httpx
+
+    from focusguard_backend.services.email import BrevoMailer
+
+    sent = {}
+
+    def fake_post(url, headers, json, timeout):
+        sent.update(url=url, headers=headers, json=json)
+        return httpx.Response(201, json={"messageId": "<x@brevo>"})
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setenv("FOCUSGUARD_BREVO_API_KEY", "xkeysib-test")
+    monkeypatch.setenv("FOCUSGUARD_MAIL_FROM", "FocusGuard <owner@gmail.com>")
+    assert client.get("/health").json()["email"] == "brevo"
+
+    BrevoMailer().send(email_codes.code_email(EMAIL, "654321", "VERIFY_EMAIL", 15))
+
+    assert sent["url"] == "https://api.brevo.com/v3/smtp/email"
+    assert sent["headers"]["api-key"] == "xkeysib-test"
+    assert sent["json"]["sender"] == {"name": "FocusGuard", "email": "owner@gmail.com"}
+    assert sent["json"]["to"] == [{"email": EMAIL}]
+    assert "654 321" in sent["json"]["htmlContent"]
+
+
+def test_a_refused_brevo_email_raises_with_the_reason(monkeypatch):
+    import httpx
+
+    from focusguard_backend.services.email import BrevoMailer
+
+    monkeypatch.setattr(
+        httpx, "post",
+        lambda *a, **k: httpx.Response(401, json={"message": "unrecognised IP address"}),
+    )
+    monkeypatch.setenv("FOCUSGUARD_BREVO_API_KEY", "xkeysib-test")
+    with pytest.raises(RuntimeError, match="unrecognised IP address"):
+        BrevoMailer().send(email_codes.code_email(EMAIL, "654321", "VERIFY_EMAIL", 15))
