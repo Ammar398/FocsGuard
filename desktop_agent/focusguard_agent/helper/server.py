@@ -95,6 +95,8 @@ from focusguard_shared.utilities.paths import app_data_dir
 logger = get_logger("helper.server")
 
 _MAX_BODY_BYTES = 4096
+#: How long a freshly launched agent counts as "starting" before its pid file.
+_LAUNCH_GRACE_SECONDS = 30.0
 
 #: (title, message) -> True if the person at the computer agreed.
 Confirm = Callable[[str, str], bool]
@@ -437,6 +439,12 @@ class FocusGuardHelper:
         self._client_factory = client_factory
         #: One dialog at a time. Two stacked consent prompts invite a mis-click.
         self._asking = threading.Lock()
+        #: Held from the first check until the agent is launched. Approval and the
+        #: phone-camera wait take seconds; without this, every extra click on
+        #: Start passed the "already running?" check and launched its own agent.
+        self._starting = threading.Lock()
+        #: The agent launched last, until its pid file shows it is running.
+        self._launched: tuple[float, Any] | None = None
 
     # -- state -------------------------------------------------------------
 
@@ -941,9 +949,34 @@ class FocusGuardHelper:
         logger.info("Camera check opened from the portal")
         return {"ok": True, "camera": readiness.as_dict()}
 
+    def _agent_launching(self) -> bool:
+        """An agent was just launched and has not written its pid file yet."""
+        if self._launched is None:
+            return False
+        at, process = self._launched
+        alive = process is not None and getattr(process, "poll", lambda: 0)() is None
+        if alive and time.monotonic() - at < _LAUNCH_GRACE_SECONDS:
+            return True
+        self._launched = None
+        return False
+
     def start_session(
         self, payload: dict[str, Any], scheduled_seconds: int | None = None
     ) -> dict[str, Any]:
+        if not self._starting.acquire(blocking=False):
+            raise HelperError(
+                409, "A session is already starting on this computer. Finish the steps there."
+            )
+        try:
+            return self._start_session(payload, scheduled_seconds)
+        finally:
+            self._starting.release()
+
+    def _start_session(
+        self, payload: dict[str, Any], scheduled_seconds: int | None
+    ) -> dict[str, Any]:
+        if self._agent_launching():
+            raise HelperError(409, "A session is already starting on this computer.")
         running = self._running_session()
         if running is not None:
             raise HelperError(409, f"A session is already running: {running!r}.")
@@ -1004,7 +1037,8 @@ class FocusGuardHelper:
 
         # --preview: a live analysis window that stays up for the whole
         # session; closing it is how the person ends the session.
-        self._launcher([*arguments, "--preview"])
+        process = self._launcher([*arguments, "--preview"])
+        self._launched = (time.monotonic(), process)
         logger.info("Session %r started from the portal", name)
         return {"ok": True, "name": name, "camera": readiness.as_dict()}
 

@@ -296,6 +296,32 @@ def test_only_one_session_at_a_time_and_stop_asks_the_agent(world, monkeypatch) 
     assert stop_tool.stop_requested()
 
 
+def test_a_second_click_while_starting_launches_nothing(world) -> None:
+    """Approval and the phone-camera wait take seconds; extra clicks must not pile up."""
+    helper = world["helper"]
+    assert helper._starting.acquire(blocking=False)  # the first start is still waiting
+    try:
+        status, body, _ = call(world, "POST", "/sessions/start", {"name": "Again"})
+    finally:
+        helper._starting.release()
+    assert status == 409 and "already starting" in body["error"]
+    assert world["asked"] == [] and world["launched"] == []
+
+
+def test_a_just_launched_agent_blocks_another_until_it_is_running(world) -> None:
+    class Alive:
+        def poll(self):
+            return None
+
+    launched = world["launched"]
+    world["helper"]._launcher = lambda arguments: (launched.append(arguments), Alive())[1]
+    world["answers"].extend([True, True])
+
+    assert call(world, "POST", "/sessions/start", {"name": "First"})[0] == 200
+    status, _, _ = call(world, "POST", "/sessions/start", {"name": "Second"})
+    assert status == 409 and len(launched) == 1
+
+
 def test_stop_with_nothing_running_is_a_409(world) -> None:
     assert call(world, "POST", "/sessions/stop", {})[0] == 409
 
